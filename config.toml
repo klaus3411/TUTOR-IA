@@ -1,0 +1,27 @@
+[theme]
+
+Color principal (Botones, barras de progreso) - Un índigo moderno
+
+primaryColor = "#4F46E5"
+
+Color de fondo principal de la página
+
+backgroundColor = "#F9FAFB"
+
+Color de fondo del panel lateral (Sidebar)
+
+secondaryBackgroundColor = "#FFFFFF"
+
+Color del texto principal
+
+textColor = "#111827"
+
+Tipografía (sans serif moderna y limpia)
+
+font = "sans serif"
+
+[server]
+
+Oculta el menú de hamburguesa por defecto para un look más "App"
+
+toolbarMode = "minimal"
