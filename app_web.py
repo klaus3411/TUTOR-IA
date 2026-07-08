@@ -4,33 +4,46 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 from groq import Groq
 from sentence_transformers import SentenceTransformer
+import streamlit.components.v1 as components
 
 # ==========================================
 # 1. CONFIGURACIÓN DE LA PÁGINA WEB
 # ==========================================
-st.set_page_config(page_title="Tutor IA - Alternancia", page_icon="🦉", layout="centered")
+st.set_page_config(page_title="Tutor IA - Alternancia", page_icon="🎓", layout="centered")
 
-# Inyección de CSS para redondear bordes, ocultar marcas de agua y mejorar el chat
-st.markdown("""
-<style>
-    /* Ocultar el pie de página de Streamlit */
-    footer {visibility: hidden;}
+# ==========================================
+# 1.5 INYECCIÓN PWA (App Instalable para Celulares)
+# ==========================================
+# Este script invisible engaña al celular para que crea que es una App Nativa
+components.html("""
+<script>
+    const manifest = {
+        "name": "Tutor IA - Colegio",
+        "short_name": "Tutor IA",
+        "theme_color": "#4F46E5",
+        "background_color": "#F9FAFB",
+        "display": "standalone",
+        "orientation": "portrait",
+        "scope": "/",
+        "start_url": "/",
+        "icons": [
+            {
+                "src": "https://cdn-icons-png.flaticon.com/512/3135/3135810.png",
+                "sizes": "512x512",
+                "type": "image/png"
+            }
+        ]
+    };
+    const stringManifest = JSON.stringify(manifest);
+    const blob = new Blob([stringManifest], {type: 'application/json'});
+    const manifestURL = URL.createObjectURL(blob);
     
-    /* Mejorar la caja de entrada de texto */
-    .stChatInputContainer {
-        padding-bottom: 20px;
-    }
-    
-    /* Estilos para tarjetas de información */
-    .info-card {
-        background-color: #EEF2FF;
-        padding: 15px;
-        border-radius: 10px;
-        border-left: 5px solid #4F46E5;
-        margin-bottom: 20px;
-    }
-</style>
-""", unsafe_allow_html=True)
+    const head = document.querySelector('head');
+    head.insertAdjacentHTML('beforeend', `<link rel="manifest" href="${manifestURL}">`);
+    head.insertAdjacentHTML('beforeend', `<meta name="theme-color" content="#4F46E5">`);
+    head.insertAdjacentHTML('beforeend', `<link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3135/3135810.png">`);
+</script>
+""", height=0)
 
 # ==========================================
 # 2. CARGA DE SISTEMAS EN MEMORIA (CACHE)
