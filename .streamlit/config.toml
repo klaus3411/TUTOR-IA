@@ -1,6 +1,20 @@
 [theme]
-primaryColor = "#4F46E5"
-backgroundColor = "#F9FAFB"
+# Cambia este código HEX por el color principal de tu colegio. 
+# Por ejemplo, un azul oscuro institucional es "#1E3A8A". Un rojo es "#B91C1C"
+primaryColor = "#f77c34"
+
+# Fondo general de la página (recomendado dejarlo claro para leer fácil)
+backgroundColor = "#F3F4F6"
+
+# Fondo del panel lateral donde va el logo
 secondaryBackgroundColor = "#FFFFFF"
-textColor = "#1F2937"
+
+# Color de los textos
+textColor = "#111827"
+
+# Tipografía (sans serif se ve más moderna)
 font = "sans serif"
+
+[server]
+# Oculta el menú de Streamlit arriba a la derecha para que parezca software propio
+toolbarMode = "minimal"
