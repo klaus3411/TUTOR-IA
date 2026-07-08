@@ -176,3 +176,40 @@ with tab_registro:
                             st.success(f"🎉 ¡{nombre_nuevo} matriculado con éxito! Ya puede iniciar sesión con el correo {correo_limpio}.")
                     except Exception as e:
                         st.error(f"❌ Ocurrió un error al conectar con la base de datos: {e}")
+            # ==========================================
+            # NUEVO: SISTEMA DE EXPORTACIÓN (EXCEL/CSV)
+            # ==========================================
+            st.divider()
+            st.subheader("📥 Exportar Calificaciones")
+            st.markdown("Descarga un reporte consolidado con la nota de participación y éxito de cada alumno.")
+            
+            # 1. Calculamos las estadísticas individuales por alumno
+            stats = df_historial.groupby("estudiante_id").agg(
+                interacciones=('exitoso', 'count'),
+                exitos=('exitoso', 'sum')
+            ).reset_index()
+            
+            # Calculamos el porcentaje de éxito personal
+            stats['%_exito'] = (stats['exitos'] / stats['interacciones'] * 100).round(1)
+            
+            # 2. Cruzamos las estadísticas con los datos personales del estudiante
+            df_reporte = pd.merge(df_estudiantes, stats, left_on='id', right_on='estudiante_id', how='left')
+            
+            # 3. Filtramos y limpiamos los datos (los que no han participado tendrán 0)
+            df_reporte = df_reporte[['nombre', 'correo', 'nivel_general', 'interacciones', '%_exito']].fillna(0)
+            
+            # Renombramos columnas para que el Excel se vea muy profesional
+            df_reporte.columns = ['Nombre del Alumno', 'Correo Institucional', 'Nivel Académico', 'Total Interacciones IA', 'Porcentaje de Éxito (%)']
+            
+            # 4. Convertimos la tabla a formato CSV listo para descargar
+            csv = df_reporte.to_csv(index=False).encode('utf-8')
+            
+            # 5. Creamos el botón de descarga
+            st.download_button(
+                label="⬇️ Descargar Reporte en Excel (CSV)",
+                data=csv,
+                file_name="reporte_notas_alternancia.csv",
+                mime="text/csv",
+                type="primary" # Lo pinta de color principal para que resalte
+            )
+                        
