@@ -9,39 +9,86 @@ import streamlit.components.v1 as components
 # ==========================================
 # 1. CONFIGURACIÓN DE LA PÁGINA WEB
 # ==========================================
-st.set_page_config(page_title="Tutor IA - Alternancia", page_icon="🎓", layout="centered")
+st.set_page_config(page_title="Portal Educativo - Alternancia", page_icon="🏫", layout="centered")
+
+# --- VARIABLE DE BRANDING (Pon aquí el link de tu logo) ---
+URL_LOGO_COLEGIO = "https://www.google.com/imgres?q=gbac%20altamar&imgurl=https%3A%2F%2Fassets.cdn.filesafe.space%2FQKti8JFTabQk5I9IOq4A%2Fmedia%2F68edfa286e3960b2a95c2063.png&imgrefurl=https%3A%2F%2Fgbac.edu.co%2F&docid=CJYeZ34LKO1BFM&tbnid=WPlyZNTHTDqzYM&vet=12ahUKEwinxdOBpcOVAxXHZzABHRD5GlgQnPAOegQIRRAA..i&w=380&h=593&hcb=2&ved=2ahUKEwinxdOBpcOVAxXHZzABHRD5GlgQnPAOegQIRRAA" 
 
 # ==========================================
 # 1.5 INYECCIÓN PWA (App Instalable para Celulares)
 # ==========================================
-# Este script invisible engaña al celular para que crea que es una App Nativa
 components.html("""
 <script>
-    const manifest = {
-        "name": "Tutor IA - Colegio",
-        "short_name": "Tutor IA",
-        "theme_color": "#4F46E5",
-        "background_color": "#F9FAFB",
-        "display": "standalone",
-        "orientation": "portrait",
-        "scope": "/",
-        "start_url": "/",
-        "icons": [
-            {
-                "src": "https://cdn-icons-png.flaticon.com/512/3135/3135810.png",
-                "sizes": "512x512",
-                "type": "image/png"
+    try {
+        const parentDoc = window.parent.document;
+        const parentWin = window.parent;
+
+        const manifest = {
+            "name": "Portal Educativo IA",
+            "short_name": "Portal IA",
+            "theme_color": "#1E3A8A",
+            "background_color": "#F3F4F6",
+            "display": "standalone",
+            "orientation": "portrait",
+            "scope": "/",
+            "start_url": "/",
+            "icons": [
+                {
+                    "src": "https://cdn-icons-png.flaticon.com/512/167/167707.png",
+                    "sizes": "512x512",
+                    "type": "image/png"
+                }
+            ]
+        };
+        
+        const blob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
+        const manifestURL = URL.createObjectURL(blob);
+        
+        const oldLink = parentDoc.querySelector('link[rel="manifest"]');
+        if(oldLink) oldLink.remove();
+
+        parentDoc.head.insertAdjacentHTML('beforeend', `<link rel="manifest" href="${manifestURL}">`);
+        parentDoc.head.insertAdjacentHTML('beforeend', `<meta name="theme-color" content="#1E3A8A">`);
+        parentDoc.head.insertAdjacentHTML('beforeend', `<link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/167/167707.png">`);
+
+        let installBtn = parentDoc.getElementById('btn-instalar-pwa');
+        if (!installBtn) {
+            installBtn = parentDoc.createElement('button');
+            installBtn.id = 'btn-instalar-pwa';
+            installBtn.innerHTML = '📲 Instalar App del Colegio';
+            installBtn.style.cssText = 'position: fixed; bottom: 30px; right: 30px; z-index: 999999; background-color: #1E3A8A; color: white; border: none; border-radius: 50px; padding: 14px 24px; font-size: 16px; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.3); cursor: pointer; display: none; transition: all 0.3s ease; font-family: sans-serif;';
+            
+            installBtn.onmouseover = () => installBtn.style.transform = 'scale(1.05)';
+            installBtn.onmouseout = () => installBtn.style.transform = 'scale(1)';
+            
+            parentDoc.body.appendChild(installBtn);
+        }
+
+        let deferredPrompt;
+        parentWin.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            installBtn.style.display = 'block';
+        });
+
+        installBtn.addEventListener('click', async () => {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                if (outcome === 'accepted') {
+                    installBtn.style.display = 'none';
+                }
+                deferredPrompt = null;
             }
-        ]
-    };
-    const stringManifest = JSON.stringify(manifest);
-    const blob = new Blob([stringManifest], {type: 'application/json'});
-    const manifestURL = URL.createObjectURL(blob);
-    
-    const head = document.querySelector('head');
-    head.insertAdjacentHTML('beforeend', `<link rel="manifest" href="${manifestURL}">`);
-    head.insertAdjacentHTML('beforeend', `<meta name="theme-color" content="#4F46E5">`);
-    head.insertAdjacentHTML('beforeend', `<link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3135/3135810.png">`);
+        });
+
+        parentWin.addEventListener('appinstalled', () => {
+            installBtn.style.display = 'none';
+        });
+
+    } catch (e) {
+        console.log("Restricción de navegador detectada.");
+    }
 </script>
 """, height=0)
 
@@ -77,20 +124,18 @@ def obtener_perfil(correo):
     return perfil, porcentaje
 
 def generar_respuesta(perfil, porcentaje_exito, pregunta):
-    # 1. Buscar en los apuntes
     vector_pregunta = modelo_vectores.encode(pregunta).tolist()
     resultados = supabase.rpc("match_contenido_curricular", {
         "query_embedding": vector_pregunta, "match_threshold": 0.3, "match_count": 1 
     }).execute()
 
     if not resultados.data:
-        return "Lo siento, ese tema aún no está en mis apuntes de clase. ¿Por qué no lo anotas para discutirlo en nuestra próxima sesión presencial?"
+        return "Lo siento, ese tema aún no está en los apuntes oficiales de la institución. ¿Por qué no lo anotas para discutirlo con el docente en la próxima sesión presencial?"
 
     texto_oficial = resultados.data[0]["contenido_texto"]
     contenido_id = resultados.data[0]["id"]
 
-    # 2. Adaptar la personalidad
-    instrucciones = "Eres un tutor pedagógico de apoyo. Usa el método socrático (guía, no des respuestas directas)."
+    instrucciones = "Eres un tutor pedagógico de apoyo institucional. Usa el método socrático (guía, no des respuestas directas)."
     if porcentaje_exito < 40 or perfil['nivel_general'] == 1:
         instrucciones += " ADAPTACIÓN: El alumno tiene dificultades. Usa analogías simples, lenguaje muy sencillo y sé muy empático."
     elif porcentaje_exito > 80 or perfil['nivel_general'] >= 4:
@@ -98,14 +143,12 @@ def generar_respuesta(perfil, porcentaje_exito, pregunta):
 
     prompt_maestro = f"{instrucciones}\n\nSOLO USA ESTA INFO OFICIAL:\n{texto_oficial}\n\nPREGUNTA DEL ALUMNO:\n{pregunta}"
 
-    # 3. Consultar a la IA
     respuesta_ia = cliente_groq.chat.completions.create(
         messages=[{"role": "user", "content": prompt_maestro}],
         model="llama-3.1-8b-instant",
         temperature=0.7
     )
     
-    # 4. Guardar interacción
     supabase.table("historial_aprendizaje").insert({
         "estudiante_id": perfil['id'],
         "contenido_id": contenido_id,
@@ -119,16 +162,17 @@ def generar_respuesta(perfil, porcentaje_exito, pregunta):
 # 4. INTERFAZ GRÁFICA (UI)
 # ==========================================
 
-# Encabezado principal
-st.title("🦉 Tutor Inteligente")
-st.markdown("<p style='font-size: 1.1rem; color: #4B5563;'>Tu acompañante para el modelo de alternancia.</p>", unsafe_allow_html=True)
+# Encabezado principal institucional
+st.title("🏫 Portal Educativo - Tutor IA")
+st.markdown("<p style='font-size: 1.1rem; color: #4B5563;'>Bienvenido al entorno virtual de aprendizaje de tu Institución.</p>", unsafe_allow_html=True)
 st.divider()
 
 # Panel lateral para iniciar sesión y métricas
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/4200/4200465.png", width=80) # Icono decorativo
-    st.header("Identificación")
-    correo_input = st.text_input("Ingresa tu correo estudiantil:")
+    # Usamos la variable del logo aquí
+    st.image(URL_LOGO_COLEGIO, width=120) 
+    st.header("Identificación Estudiantil")
+    correo_input = st.text_input("Ingresa tu correo institucional:")
     
     if correo_input:
         perfil, exito = obtener_perfil(correo_input)
@@ -137,62 +181,70 @@ with st.sidebar:
             st.session_state['perfil'] = perfil
             st.session_state['exito'] = exito
             
-            # Tarjeta de bienvenida
             st.markdown(f"### 👋 Hola, {perfil['nombre']}")
             
-            # Métricas en columnas para que se vean como un "Dashboard"
             col1, col2 = st.columns(2)
             col1.metric("Nivel", f"Lvl {perfil['nivel_general']}")
             col2.metric("Aciertos", f"{int(exito)}%")
             
-            # Barra de progreso visual del rendimiento
             st.caption("Rendimiento reciente:")
             st.progress(int(exito) / 100)
             
             st.divider()
-            st.caption("🟢 Conectado al entorno de aprendizaje")
+            st.caption("🟢 Conectado a la base de datos del colegio")
             
         else:
-            st.error("Correo no encontrado. Consulta con el profesor.")
+            st.error("Correo no encontrado en el sistema. Consulta con tu profesor.")
             st.session_state['usuario_valido'] = False
+
+    # ==========================================
+    # GUÍA MANUAL DE INSTALACIÓN
+    # ==========================================
+    st.divider()
+    with st.expander("📲 Instalar App del Colegio"):
+        st.markdown("""
+        **Si tienes Android:**
+        1. Toca el botón flotante **"Instalar App del Colegio"** abajo a la derecha. 
+        2. *(Si no aparece, toca los 3 puntitos del navegador arriba a la derecha y selecciona "Instalar aplicación")*.
+        
+        **Si tienes iPhone (Apple):**
+        1. Toca el botón **Compartir** (cuadrado con flecha hacia arriba).
+        2. Desliza hacia abajo y selecciona ➕ **Agregar a inicio**.
+        3. Toca en "Agregar".
+        """)
 
 # Sistema de Chat
 if st.session_state.get('usuario_valido', False):
     
-    # Mensaje de bienvenida inicial en el chat
     if "mensajes" not in st.session_state:
-        st.session_state.mensajes = [{"role": "assistant", "content": f"¡Hola {st.session_state['perfil']['nombre']}! ¿Qué tema de la clase te gustaría repasar hoy?"}]
+        st.session_state.mensajes = [{"role": "assistant", "content": f"¡Hola {st.session_state['perfil']['nombre']}! Soy el Tutor IA oficial del colegio. ¿Qué tema de nuestra clase te gustaría repasar hoy?"}]
 
-    # Mostrar historial de mensajes con AVATARES
+    # Mostrar historial de mensajes
     for mensaje in st.session_state.mensajes:
-        # Asignamos un icono según quién hable
-        avatar_icon = "🧑‍🎓" if mensaje["role"] == "user" else "🦉"
+        # Aquí asignamos el logo del colegio a la IA para que se vea más profesional
+        avatar_icon = "🧑‍🎓" if mensaje["role"] == "user" else URL_LOGO_COLEGIO
         with st.chat_message(mensaje["role"], avatar=avatar_icon):
             st.markdown(mensaje["content"])
 
-    # Caja de texto flotante en la parte inferior
-    if pregunta := st.chat_input("Escribe tu duda aquí (ej: ¿Qué es la mitocondria?)..."):
+    if pregunta := st.chat_input("Escribe tu duda aquí (ej: ¿Cuáles son las partes de la célula?)..."):
         
-        # Mostrar mensaje del usuario
         with st.chat_message("user", avatar="🧑‍🎓"):
             st.markdown(pregunta)
         st.session_state.mensajes.append({"role": "user", "content": pregunta})
 
-        # Mostrar "Escribiendo..." y generar respuesta
-        with st.chat_message("assistant", avatar="🦉"):
-            with st.spinner("Revisando los apuntes de la clase..."):
+        # Mostrar "Escribiendo..." con el logo del colegio
+        with st.chat_message("assistant", avatar=URL_LOGO_COLEGIO):
+            with st.spinner("Revisando los apuntes oficiales..."):
                 respuesta = generar_respuesta(st.session_state['perfil'], st.session_state['exito'], pregunta)
                 st.markdown(respuesta)
         
-        # Guardar respuesta
         st.session_state.mensajes.append({"role": "assistant", "content": respuesta})
 
 else:
-    # Pantalla de espera cuando no ha iniciado sesión
     st.markdown("""
     <div class="info-card">
-        <h4>🔒 Acceso Restringido</h4>
-        <p>Por favor, usa el <b>panel izquierdo</b> para ingresar tu correo estudiantil y desbloquear el tutor.</p>
+        <h4>🔒 Portal de Acceso Restringido</h4>
+        <p>Por favor, usa el <b>panel izquierdo</b> para ingresar tu correo y desbloquear tus herramientas de estudio.</p>
         <p><i>💡 Tip de prueba: Usa <code>carlos.mendoza@ejemplo.com</code></i></p>
     </div>
     """, unsafe_allow_html=True)
