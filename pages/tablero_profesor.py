@@ -45,7 +45,6 @@ supabase = iniciar_conexion()
 # ==========================================
 # 4. INTERFAZ DE PESTAÑAS (TABS)
 # ==========================================
-# ¡NUEVO! Agregamos una tercera pestaña para el registro de estudiantes
 tab_analiticas, tab_cargador, tab_registro = st.tabs([
     "📊 Analíticas de Estudiantes", 
     "🧠 Enseñar a la IA (Cargar Clase)",
@@ -108,8 +107,45 @@ with tab_analiticas:
                 actividad_diaria = df_historial.groupby("fecha").size()
                 st.line_chart(actividad_diaria)
 
-            st.subheader("📋 Lista de Estudiantes")
-            st.dataframe(df_estudiantes[["nombre", "correo", "nivel_general"]], use_container_width=True)
+            # ==========================================
+            # TABLA DETALLADA EN PANTALLA Y EXPORTACIÓN
+            # ==========================================
+            st.divider()
+            st.subheader("📋 Reporte Detallado de Estudiantes")
+            
+            # 1. Calculamos las estadísticas individuales por alumno primero
+            stats = df_historial.groupby("estudiante_id").agg(
+                interacciones=('exitoso', 'count'),
+                exitos=('exitoso', 'sum')
+            ).reset_index()
+            
+            # Calculamos el porcentaje de éxito personal
+            stats['%_exito'] = (stats['exitos'] / stats['interacciones'] * 100).round(1)
+            
+            # 2. Cruzamos las estadísticas con los datos personales del estudiante
+            df_reporte = pd.merge(df_estudiantes, stats, left_on='id', right_on='estudiante_id', how='left')
+            
+            # 3. Filtramos y limpiamos los datos (los que no han participado tendrán 0)
+            df_reporte = df_reporte[['nombre', 'correo', 'nivel_general', 'interacciones', '%_exito']].fillna(0)
+            
+            # 4. Renombramos columnas para que se vea muy profesional tanto en web como en Excel
+            df_reporte.columns = ['Nombre del Alumno', 'Correo Institucional', 'Nivel Académico', 'Total Interacciones IA', 'Porcentaje de Éxito (%)']
+            
+            # 5. Mostramos la tabla DETALLADA en la pantalla (Esto soluciona lo de tu imagen)
+            st.dataframe(df_reporte, use_container_width=True)
+            
+            # 6. Convertimos esa misma tabla detallada a formato CSV listo para descargar
+            csv = df_reporte.to_csv(index=False).encode('utf-8')
+            
+            st.markdown("¿Necesitas pasar estas notas a tu sistema oficial? Descarga el consolidado:")
+            # 7. Creamos el botón de descarga
+            st.download_button(
+                label="⬇️ Descargar Reporte en Excel (CSV)",
+                data=csv,
+                file_name="reporte_notas_alternancia.csv",
+                mime="text/csv",
+                type="primary" 
+            )
 
 # ------------------------------------------
 # PESTAÑA 2: CARGADOR DE CLASES
@@ -141,7 +177,7 @@ with tab_cargador:
                         st.error(f"❌ Error: {e}")
 
 # ------------------------------------------
-# PESTAÑA 3: REGISTRO DE ESTUDIANTES (NUEVA)
+# PESTAÑA 3: REGISTRO DE ESTUDIANTES 
 # ------------------------------------------
 with tab_registro:
     st.subheader("🧑‍🎓 Matricular Nuevo Estudiante")
@@ -149,7 +185,6 @@ with tab_registro:
     
     with st.form("form_nuevo_alumno"):
         nombre_nuevo = st.text_input("Nombre Completo (Ej: Ana Gómez)")
-        # .strip().lower() se usará luego para asegurar que no haya espacios por error
         correo_nuevo = st.text_input("Correo Institucional (Ej: ana.gomez@colegio.edu.co)")
         nivel_nuevo = st.slider("Nivel académico inicial (1 = Básico, 5 = Avanzado)", 1, 5, 2)
         
@@ -162,12 +197,10 @@ with tab_registro:
                 correo_limpio = correo_nuevo.strip().lower()
                 with st.spinner("Registrando en la base de datos..."):
                     try:
-                        # 1. Verificar si el correo ya existe para no duplicar
                         validacion = supabase.table("estudiantes").select("id").eq("correo", correo_limpio).execute()
                         if validacion.data:
                             st.warning(f"⚠️ El correo {correo_limpio} ya está registrado.")
                         else:
-                            # 2. Insertar el nuevo estudiante
                             supabase.table("estudiantes").insert({
                                 "nombre": nombre_nuevo,
                                 "correo": correo_limpio,
@@ -175,41 +208,4 @@ with tab_registro:
                             }).execute()
                             st.success(f"🎉 ¡{nombre_nuevo} matriculado con éxito! Ya puede iniciar sesión con el correo {correo_limpio}.")
                     except Exception as e:
-                        st.error(f"❌ Ocurrió un error al conectar con la base de datos: {e}")
-            # ==========================================
-            # NUEVO: SISTEMA DE EXPORTACIÓN (EXCEL/CSV)
-            # ==========================================
-            st.divider()
-            st.subheader("📥 Exportar Calificaciones")
-            st.markdown("Descarga un reporte consolidado con la nota de participación y éxito de cada alumno.")
-            
-            # 1. Calculamos las estadísticas individuales por alumno
-            stats = df_historial.groupby("estudiante_id").agg(
-                interacciones=('exitoso', 'count'),
-                exitos=('exitoso', 'sum')
-            ).reset_index()
-            
-            # Calculamos el porcentaje de éxito personal
-            stats['%_exito'] = (stats['exitos'] / stats['interacciones'] * 100).round(1)
-            
-            # 2. Cruzamos las estadísticas con los datos personales del estudiante
-            df_reporte = pd.merge(df_estudiantes, stats, left_on='id', right_on='estudiante_id', how='left')
-            
-            # 3. Filtramos y limpiamos los datos (los que no han participado tendrán 0)
-            df_reporte = df_reporte[['nombre', 'correo', 'nivel_general', 'interacciones', '%_exito']].fillna(0)
-            
-            # Renombramos columnas para que el Excel se vea muy profesional
-            df_reporte.columns = ['Nombre del Alumno', 'Correo Institucional', 'Nivel Académico', 'Total Interacciones IA', 'Porcentaje de Éxito (%)']
-            
-            # 4. Convertimos la tabla a formato CSV listo para descargar
-            csv = df_reporte.to_csv(index=False).encode('utf-8')
-            
-            # 5. Creamos el botón de descarga
-            st.download_button(
-                label="⬇️ Descargar Reporte en Excel (CSV)",
-                data=csv,
-                file_name="reporte_notas_alternancia.csv",
-                mime="text/csv",
-                type="primary" # Lo pinta de color principal para que resalte
-            )
-                        
+                        st.error(f"❌ Ocurrió un error al conectar con la base de datos: {e}")                        
