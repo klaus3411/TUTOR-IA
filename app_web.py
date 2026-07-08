@@ -12,7 +12,7 @@ import streamlit.components.v1 as components
 st.set_page_config(page_title="Portal Educativo - Alternancia", page_icon="🏫", layout="centered")
 
 # --- VARIABLE DE BRANDING (Pon aquí el link de tu logo) ---
-URL_LOGO_COLEGIO = "https://www.google.com/imgres?q=gbac%20altamar&imgurl=https%3A%2F%2Fassets.cdn.filesafe.space%2FQKti8JFTabQk5I9IOq4A%2Fmedia%2F68edfa286e3960b2a95c2063.png&imgrefurl=https%3A%2F%2Fgbac.edu.co%2F&docid=CJYeZ34LKO1BFM&tbnid=WPlyZNTHTDqzYM&vet=12ahUKEwinxdOBpcOVAxXHZzABHRD5GlgQnPAOegQIRRAA..i&w=380&h=593&hcb=2&ved=2ahUKEwinxdOBpcOVAxXHZzABHRD5GlgQnPAOegQIRRAA" 
+URL_LOGO_COLEGIO = "https://images.leadconnectorhq.com/image/f_webp/q_80/r_1200/u_https://assets.cdn.filesafe.space/CqwkTEZZmpZXlnX4iVPm/media/7da16945-4101-474d-8992-326abe631293.png" 
 
 # ==========================================
 # 1.5 INYECCIÓN PWA (App Instalable para Celulares)
