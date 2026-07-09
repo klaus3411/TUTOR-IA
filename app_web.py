@@ -128,18 +128,13 @@ def evaluar_actividad(tutoria, historial_mensajes):
         return match.group(0)
     return contenido
 
-def generar_respuesta(perfil, tutoria, historial_mensajes):
-    # Extraer el texto de la última pregunta para buscar en los apuntes
-    ultimo_msj = historial_mensajes[-1]["content"]
-    texto_busqueda = "Explicación de tarea"
+def generar_respuesta(perfil, tutoria, pregunta_actual, historial_mensajes):
+    """Genera respuesta adaptativa manejando formatos complejos de imagen/PDF."""
     
-    if isinstance(ultimo_msj, str):
-        texto_busqueda = ultimo_msj
-    elif isinstance(ultimo_msj, list):
-        for item in ultimo_msj:
-            if item["type"] == "text":
-                texto_busqueda = item["text"]
-
+    # 1. Limpieza: Extraer texto plano para la búsqueda vectorial (RAG)
+    # Si es una lista compleja (imagen/pdf), sacamos el texto del primer elemento
+    texto_busqueda = str(pregunta_actual)
+    
     vector_pregunta = modelo_vectores.encode(texto_busqueda).tolist()
     resultados = supabase.rpc("match_contenido_curricular", {
         "query_embedding": vector_pregunta, "match_threshold": 0.3, "match_count": 1 
@@ -155,16 +150,21 @@ def generar_respuesta(perfil, tutoria, historial_mensajes):
     COMPLEJIDAD: {tutoria['complejidad']}
     
     REGLAS:
-    1. Si el alumno sube una imagen o PDF, analízalo cuidadosamente.
-    2. Haz UNA SOLA pregunta a la vez. No simules la respuesta del estudiante.
+    1. Si el alumno sube una imagen o PDF, analízalo.
+    2. Haz UNA SOLA pregunta a la vez.
     """
 
-    tiene_imagen = any(isinstance(m['content'], list) for m in historial_mensajes[-5:])
-    modelo_chat = "llama-3.2-11b-vision-preview" if tiene_imagen else "llama-3.1-8b-instant"
-
+    # 2. Preparar mensajes para Groq
     mensajes_api = [{"role": "system", "content": f"{instrucciones}\n\nINFO OFICIAL:\n{texto_oficial}"}]
-    for msg in historial_mensajes[-8:]: # Mandamos los últimos 8 mensajes de contexto
+    
+    # Añadimos el historial asegurando compatibilidad
+    for msg in historial_mensajes[-8:]:
+        # Si es contenido complejo, lo pasamos tal cual para visión, si es texto, igual.
         mensajes_api.append({"role": msg["role"], "content": msg["content"]})
+
+    # Detectamos modelo según si hay archivos en el historial reciente
+    tiene_archivos = any(isinstance(m['content'], list) for m in historial_mensajes[-5:])
+    modelo_chat = "llama-3.2-11b-vision-preview" if tiene_archivos else "llama-3.1-8b-instant"
 
     respuesta_ia = cliente_groq.chat.completions.create(
         messages=mensajes_api,
@@ -172,7 +172,6 @@ def generar_respuesta(perfil, tutoria, historial_mensajes):
         temperature=0.7
     )
     return respuesta_ia.choices[0].message.content
-
 # ==========================================
 # 4. INTERFAZ GRÁFICA (UI)
 # ==========================================
