@@ -75,7 +75,6 @@ def obtener_perfil(correo):
 
 def evaluar_actividad(perfil, historial_chat):
     """Motor de evaluación objetivo y estructurado en JSON."""
-    # Extraemos la rúbrica si el profe la puso, si no, usamos una por defecto
     rubrica = perfil.get('rubrica_evaluacion', 'Evalúa de forma estricta del 0 al 100 qué tanto entendió el estudiante el tema tratado. Revisa si cumplió la actividad asignada, su esfuerzo y la precisión de sus respuestas.')
     
     prompt_evaluador = f"""
@@ -96,17 +95,17 @@ def evaluar_actividad(perfil, historial_chat):
     }}
     """
     
-    # Obligamos a Groq a devolver un JSON perfecto
     respuesta = cliente_groq.chat.completions.create(
         messages=[{"role": "user", "content": prompt_evaluador}],
         model="llama-3.1-8b-instant",
         response_format={"type": "json_object"},
-        temperature=0.1 # Muy baja temperatura para que sea estricto y analítico
+        temperature=0.1 
     )
     return respuesta.choices[0].message.content
 
-def generar_respuesta(perfil, porcentaje_exito, pregunta):
-    """El cerebro del Tutor Adaptativo (RAG + Prompting)"""
+# ! NUEVO: Agregamos el historial_chat como parámetro para darle memoria a la IA
+def generar_respuesta(perfil, porcentaje_exito, pregunta, historial_chat):
+    """El cerebro del Tutor Adaptativo (RAG + Prompting con Memoria)"""
     vector_pregunta = modelo_vectores.encode(pregunta).tolist()
     resultados = supabase.rpc("match_contenido_curricular", {
         "query_embedding": vector_pregunta, "match_threshold": 0.3, "match_count": 1 
@@ -120,23 +119,37 @@ def generar_respuesta(perfil, porcentaje_exito, pregunta):
         contenido_id = resultados.data[0]["id"]
 
     grado_alumno = perfil.get('grado', 'un grado escolar')
+    
+    # ! NUEVO: Reglas Anti-Monólogo estrictas
     instrucciones = f"""Eres un tutor pedagógico excepcionalmente amable y empático. 
-    El estudiante está en: {grado_alumno}. Ajusta estrictamente tu vocabulario y ejemplos para que un estudiante de {grado_alumno} lo entienda perfectamente. Usa el método socrático."""
+    El estudiante está en: {grado_alumno}. Ajusta estrictamente tu vocabulario y ejemplos para que un estudiante de {grado_alumno} lo entienda perfectamente. Usa el método socrático.
+    
+    REGLAS ESTRICTAS PARA TU COMPORTAMIENTO:
+    1. Escribe ÚNICAMENTE tu próximo turno en la conversación.
+    2. NO asumas, no simules ni escribas lo que el estudiante va a responder.
+    3. NUNCA incluyas notas de guion como "(Espera la respuesta del estudiante)".
+    4. Haz UNA SOLA pregunta a la vez y detente. Permite que el estudiante responda.
+    5. Sé conciso y directo, simulando una conversación real de WhatsApp."""
 
     tarea_actual = perfil.get('asignacion_actual')
     complejidad = perfil.get('complejidad_asignacion', 'Intermedio')
     
     if tarea_actual:
         instrucciones += f"""\n\nATENCIÓN: El profesor asignó esta actividad al estudiante: '{tarea_actual}'.
-        Complejidad exigida: {complejidad}. Guíalo a cumplir esta actividad."""
+        Complejidad exigida: {complejidad}. Guíalo paso a paso para cumplir esta actividad, sin darle la respuesta completa de golpe."""
     else:
         if not resultados.data:
             return "¡Hola! Esa es una gran pregunta. Sin embargo, ese tema aún no está en mis apuntes oficiales y no tienes una actividad asignada al respecto. ¿Qué te parece si lo anotas para la próxima clase con el profe?"
 
-    prompt_maestro = f"{instrucciones}\n\nSOLO USA ESTA INFO OFICIAL (Si aplica):\n{texto_oficial}\n\nPREGUNTA DEL ALUMNO:\n{pregunta}"
+    # ! NUEVO: Construcción de la memoria del chat para enviar a Groq
+    mensajes_api = [{"role": "system", "content": f"{instrucciones}\n\nSOLO USA ESTA INFO OFICIAL (Si aplica):\n{texto_oficial}"}]
+    
+    # Pasamos los últimos 8 mensajes para que la IA entienda el contexto de la conversación
+    for msg in historial_chat[-8:]:
+        mensajes_api.append({"role": msg["role"], "content": msg["content"]})
 
     respuesta_ia = cliente_groq.chat.completions.create(
-        messages=[{"role": "user", "content": prompt_maestro}],
+        messages=mensajes_api,
         model="llama-3.1-8b-instant",
         temperature=0.7
     )
@@ -207,7 +220,8 @@ if st.session_state.get('usuario_valido', False):
 
         with st.chat_message("assistant", avatar=URL_LOGO_COLEGIO):
             with st.spinner("Pensando respuesta..."):
-                respuesta = generar_respuesta(st.session_state['perfil'], st.session_state['exito'], pregunta)
+                # ! NUEVO: Aquí ahora enviamos 'st.session_state.mensajes' como cuarto parámetro
+                respuesta = generar_respuesta(st.session_state['perfil'], st.session_state['exito'], pregunta, st.session_state.mensajes)
                 st.markdown(respuesta)
         
         st.session_state.mensajes.append({"role": "assistant", "content": respuesta})
@@ -224,9 +238,7 @@ if st.session_state.get('usuario_valido', False):
             with st.spinner("🧑‍🏫 Evaluando desempeño de manera objetiva..."):
                 try:
                     resultado_json_str = evaluar_actividad(st.session_state['perfil'], historial_texto)
-                    datos_evaluacion = json.loads(resultado_json_str) # Convertimos el texto a diccionario de Python
-                    
-                    # Guardamos el resultado en la sesión para mostrarlo
+                    datos_evaluacion = json.loads(resultado_json_str) 
                     st.session_state['resultado_evaluacion'] = datos_evaluacion
                 except Exception as e:
                     st.error(f"Hubo un error al generar la evaluación: {e}")
@@ -236,7 +248,6 @@ if st.session_state.get('usuario_valido', False):
         datos = st.session_state['resultado_evaluacion']
         st.markdown("### 📊 Reporte de Evaluación")
         
-        # Color de la nota según si pasó o no
         color_nota = "green" if datos['nota'] >= 60 else "red"
         st.markdown(f"<h1 style='text-align: center; color: {color_nota}; font-size: 4rem;'>{datos['nota']}/100</h1>", unsafe_allow_html=True)
         
