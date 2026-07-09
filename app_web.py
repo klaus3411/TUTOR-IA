@@ -130,18 +130,31 @@ def generar_respuesta(perfil, porcentaje_exito, pregunta):
     }).execute()
 
     if not resultados.data:
-        return "Lo siento, ese tema aún no está en los apuntes oficiales de la institución. ¿Por qué no lo anotas para discutirlo con el docente en la próxima sesión presencial?"
+        return "¡Hola! Qué buena pregunta. Sin embargo, ese tema aún no está en mis apuntes oficiales de la clase. ¿Por qué no lo anotas para preguntarle al profe en nuestra próxima sesión presencial? ¡Seguro le encantará tu curiosidad! 🌟"
 
     texto_oficial = resultados.data[0]["contenido_texto"]
     contenido_id = resultados.data[0]["id"]
 
-    instrucciones = "Eres un tutor pedagógico de apoyo institucional. Usa el método socrático (guía, no des respuestas directas)."
-    if porcentaje_exito < 40 or perfil['nivel_general'] == 1:
-        instrucciones += " ADAPTACIÓN: El alumno tiene dificultades. Usa analogías simples, lenguaje muy sencillo y sé muy empático."
-    elif porcentaje_exito > 80 or perfil['nivel_general'] >= 4:
-        instrucciones += " ADAPTACIÓN: El alumno es avanzado. Usa lenguaje académico y lánzale un reto intelectual al final."
+    # ==========================================
+    # MEJORA 1 y 3: Tono amigable y adaptación al grado
+    # ==========================================
+    grado_alumno = perfil.get('grado', 'un grado escolar')
+    instrucciones = f"""Eres un tutor pedagógico excepcionalmente amable, cálido, paciente y empático. 
+    Tu objetivo es hacer que el estudiante se sienta seguro y motivado. Celebra su esfuerzo y usa emojis amigables.
+    El estudiante está en: {grado_alumno}. Ajusta estrictamente tu vocabulario, ejemplos y nivel de abstracción para que un estudiante de {grado_alumno} lo entienda perfectamente. Usa el método socrático (guíalo con preguntas, nunca le des la respuesta directa)."""
 
-    prompt_maestro = f"{instrucciones}\n\nSOLO USA ESTA INFO OFICIAL:\n{texto_oficial}\n\nPREGUNTA DEL ALUMNO:\n{pregunta}"
+    # ==========================================
+    # MEJORA 2 y 4: Asignaciones específicas y complejidad
+    # ==========================================
+    tarea_actual = perfil.get('asignacion_actual')
+    complejidad = perfil.get('complejidad_asignacion', 'Intermedio')
+    
+    if tarea_actual:
+        instrucciones += f"""\n\nATENCIÓN: El profesor le ha asignado la siguiente meta/actividad específica a este estudiante: '{tarea_actual}'.
+        El nivel de complejidad exigido por el profesor para esta interacción es: {complejidad}.
+        Si el estudiante hace una pregunta general, guíalo sutilmente hacia el cumplimiento de esa actividad asignada, ajustando la dificultad de tus explicaciones al nivel '{complejidad}'."""
+
+    prompt_maestro = f"{instrucciones}\n\nSOLO USA ESTA INFO OFICIAL DEL COLEGIO:\n{texto_oficial}\n\nPREGUNTA DEL ALUMNO:\n{pregunta}"
 
     respuesta_ia = cliente_groq.chat.completions.create(
         messages=[{"role": "user", "content": prompt_maestro}],
@@ -157,7 +170,7 @@ def generar_respuesta(perfil, porcentaje_exito, pregunta):
     }).execute()
 
     return respuesta_ia.choices[0].message.content
-
+    
 # ==========================================
 # 4. INTERFAZ GRÁFICA (UI)
 # ==========================================
