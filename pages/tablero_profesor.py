@@ -16,7 +16,9 @@ st.set_page_config(page_title="Tablero del Profesor", page_icon="👨‍🏫", l
 st.title("👨‍🏫 Tablero Analítico del Profesor")
 st.markdown("Visualiza el rendimiento, gestiona el conocimiento de la IA y administra a tus alumnos.")
 
+# Contraseña dura para el prototipo
 PASSWORD_PROFESOR = "Alternancia2024"
+
 contrasena_ingresada = st.text_input("🔑 Contraseña de acceso:", type="password")
 
 if contrasena_ingresada != PASSWORD_PROFESOR:
@@ -150,7 +152,7 @@ with tab_registro:
                     st.error(f"❌ Error: {e}")
 
 # ------------------------------------------
-# PESTAÑA 4: ASIGNAR TUTORÍAS (¡NUEVO SISTEMA!)
+# PESTAÑA 4: ASIGNAR TUTORÍAS 
 # ------------------------------------------
 with tab_asignaciones:
     st.subheader("🎯 Asignar Tutorías por Asignatura")
@@ -173,7 +175,8 @@ with tab_asignaciones:
             nueva_complejidad = st.radio("4. Nivel de exigencia:", ["Básico", "Intermedio", "Avanzado"], horizontal=True)
             nueva_rubrica = st.text_area("5. Rúbrica de evaluación (Opcional):", placeholder="Ej: Restar puntos si hay mala ortografía.")
             
-            if st.form_submit_button("🚀 Crear Tutoría"):
+            col_btn1, col_btn2 = st.columns(2)
+            if col_btn1.form_submit_button("🚀 Crear Tutoría"):
                 if nueva_tarea:
                     try:
                         supabase.table("tutorias").insert({
@@ -183,21 +186,33 @@ with tab_asignaciones:
                         st.success(f"✅ Tutoría de {asignatura} creada con éxito. El alumno la verá en su panel.")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Error al guardar. Asegúrate de haber creado la tabla 'tutorias'. Detalle: {e}")
+                        st.error(f"Error al guardar. Detalle: {e}")
                 else:
                     st.error("Debes escribir una tarea.")
+            
+            if col_btn2.form_submit_button("🧹 Borrar asignación actual"):
+                st.info("Para borrar tutorías, el alumno debe completarlas, o puedes gestionarlas directamente desde Supabase.")
         
         st.divider()
         st.subheader("📋 Tutorías Pendientes Activas")
+        
+        # --- AQUÍ ESTÁ LA SOLUCIÓN AL ERROR DEL TABLERO ---
         try:
-            res_tutorias = supabase.table("tutorias").select("*, estudiantes(nombre)").eq("estado", "pendiente").order("created_at", desc=True).execute()
+            # Traemos las tutorías pendientes sin el filtro complejo que causaba el error
+            res_tutorias = supabase.table("tutorias").select("*").eq("estado", "pendiente").order("created_at", desc=True).execute()
+            
             if not res_tutorias.data:
                 st.info("No tienes alumnos con tutorías pendientes en este momento.")
             else:
                 df_tut = pd.DataFrame(res_tutorias.data)
-                df_tut['Alumno'] = df_tut['estudiantes'].apply(lambda x: x['nombre'])
-                df_tut = df_tut[['Alumno', 'asignatura', 'mision', 'complejidad']]
+                
+                # Cruzamos los IDs con la lista de alumnos directamente en Python con Pandas
+                df_tut = pd.merge(df_tut, df_lista[['id', 'nombre']], left_on='estudiante_id', right_on='id', how='left')
+                
+                # Dejamos la tabla limpia
+                df_tut = df_tut[['nombre', 'asignatura', 'mision', 'complejidad']]
                 df_tut.columns = ['Alumno', 'Asignatura', 'Misión Asignada', 'Complejidad']
+                
                 st.dataframe(df_tut, use_container_width=True)
-        except Exception:
-            st.warning("Crea la tabla 'tutorias' en Supabase para ver las asignaciones pendientes.")
+        except Exception as e:
+            st.error(f"Error al cargar las asignaciones pendientes. Detalle técnico: {e}")
