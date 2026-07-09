@@ -76,7 +76,6 @@ def obtener_perfil(correo):
 
 def evaluar_actividad(perfil, historial_chat):
     """Motor de evaluación objetivo y estructurado en JSON."""
-    # Extraemos la rúbrica y LA TAREA para dárselas al evaluador
     rubrica = perfil.get('rubrica_evaluacion', 'Evalúa de forma estricta del 0 al 100 qué tanto entendió el estudiante el tema tratado. Revisa si cumplió la actividad asignada, su esfuerzo y la precisión de sus respuestas.')
     tarea_asignada = perfil.get('asignacion_actual', 'No hay una tarea específica asignada. Evalúa la comprensión general del tema.')
     
@@ -236,6 +235,24 @@ if st.session_state.get('usuario_valido', False):
                     resultado_json_str = evaluar_actividad(st.session_state['perfil'], historial_texto)
                     datos_evaluacion = json.loads(resultado_json_str) 
                     st.session_state['resultado_evaluacion'] = datos_evaluacion
+                    
+                    # --- NUEVO: GUARDAR EL HISTORIAL EN LA TABLA EVALUACIONES ---
+                    tarea_realizada = st.session_state['perfil'].get('asignacion_actual', 'Actividad Libre')
+                    supabase.table("evaluaciones").insert({
+                        "estudiante_id": st.session_state['perfil']['id'],
+                        "tarea": tarea_realizada,
+                        "nota": datos_evaluacion['nota'],
+                        "feedback": datos_evaluacion['feedback']
+                    }).execute()
+                    
+                    # --- NUEVO: LIMPIAR LA TAREA ACTUAL ---
+                    # Así el alumno sabe que ya entregó y tú puedes asignarle una nueva
+                    supabase.table("estudiantes").update({
+                        "asignacion_actual": None,
+                        "complejidad_asignacion": None,
+                        "rubrica_evaluacion": None
+                    }).eq("id", st.session_state['perfil']['id']).execute()
+                    
                 except Exception as e:
                     st.error(f"Hubo un error al generar la evaluación: {e}")
     
