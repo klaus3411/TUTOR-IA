@@ -57,51 +57,36 @@ tab_analiticas, tab_cargador, tab_registro, tab_asignaciones = st.tabs([
 # ------------------------------------------
 with tab_analiticas:
     with st.spinner("Extrayendo datos de aprendizaje..."):
-        res_estudiantes = supabase.table("estudiantes").select("*").execute()
-        df_estudiantes = pd.DataFrame(res_estudiantes.data)
+        try:
+            res_estudiantes = supabase.table("estudiantes").select("*").execute()
+            df_estudiantes = pd.DataFrame(res_estudiantes.data)
 
-        res_historial = supabase.table("historial_aprendizaje").select("*, contenido_curricular(tema, subtema)").execute()
-        
-        if not res_historial.data:
-            st.info("Aún no hay interacciones registradas por los estudiantes.")
-        else:
-            datos_planos = []
-            for item in res_historial.data:
-                tema = item.get("contenido_curricular", {}).get("tema", "Desconocido") if item.get("contenido_curricular") else "Desconocido"
-                subtema = item.get("contenido_curricular", {}).get("subtema", "Desconocido") if item.get("contenido_curricular") else "Desconocido"
-                
-                datos_planos.append({
-                    "estudiante_id": item["estudiante_id"],
-                    "tema": tema,
-                    "subtema": subtema,
-                    "exitoso": item["fue_exitoso"],
-                    "fecha": item["fecha_interaccion"]
-                })
+            res_historial = supabase.table("historial_aprendizaje").select("*, contenido_curricular(tema, subtema)").execute()
             
-            df_historial = pd.DataFrame(datos_planos)
+            if not res_historial.data:
+                st.info("Aún no hay interacciones registradas por los estudiantes.")
+            else:
+                datos_planos = []
+                for item in res_historial.data:
+                    tema = item.get("contenido_curricular", {}).get("tema", "Desconocido") if item.get("contenido_curricular") else "Desconocido"
+                    datos_planos.append({
+                        "estudiante_id": item["estudiante_id"],
+                        "tema": tema,
+                        "exitoso": item["fue_exitoso"],
+                        "fecha": item["fecha_interaccion"]
+                    })
+                
+                df_historial = pd.DataFrame(datos_planos)
 
-            total_alumnos = len(df_estudiantes)
-            total_interacciones = len(df_historial)
-            tasa_exito_global = (df_historial["exitoso"].sum() / total_interacciones) * 100 if total_interacciones > 0 else 0
+                total_alumnos = len(df_estudiantes)
+                total_interacciones = len(df_historial)
+                tasa_exito_global = (df_historial["exitoso"].sum() / total_interacciones) * 100 if total_interacciones > 0 else 0
 
-            fallos_por_tema = df_historial[df_historial["exitoso"] == False].groupby("tema").size()
-            tema_critico = fallos_por_tema.idxmax() if not fallos_por_tema.empty else "Ninguno, ¡todo perfecto!"
+                fallos_por_tema = df_historial[df_historial["exitoso"] == False].groupby("tema").size()
+                tema_critico = fallos_por_tema.idxmax() if not fallos_por_tema.empty else "Ninguno, ¡todo perfecto!"
 
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Total Alumnos", total_alumnos)
-            col2.metric("Interacciones IA", total_interacciones)
-            col3.metric("Tasa de Éxito", f"{tasa_exito_global:.1f}%")
-            col4.metric("🚨 Repasar en Clase", tema_critico)
-
-            st.divider()
-
-            col_izq, col_der = st.columns(2)
-
-            with col_izq:
-                st.subheader("📊 Rendimiento por Tema")
-                exito_tema = df_historial.groupby("tema")["exitoso"].mean() * 100
-                st.bar_chart(exito_tema)
-
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("Total Alumnos", total_alumnos)
             with col_der:
                 st.subheader("👥 Actividad Reciente")
                 df_historial["fecha"] = pd.to_datetime(df_historial["fecha"]).dt.date
@@ -109,44 +94,46 @@ with tab_analiticas:
                 st.line_chart(actividad_diaria)
 
             # ==========================================
-            # TABLA DETALLADA EN PANTALLA Y EXPORTACIÓN
+            # TABLA: HISTORIAL COMPLETO DE EVALUACIONES
             # ==========================================
             st.divider()
-            st.subheader("📋 Reporte Detallado de Estudiantes")
+            st.subheader("📋 Historial de Calificaciones")
+            st.markdown("Registro de todas las actividades entregadas y evaluadas por la IA en el tiempo.")
             
-            # 1. Calculamos las estadísticas individuales por alumno primero
-            stats = df_historial.groupby("estudiante_id").agg(
-                interacciones=('exitoso', 'count'),
-                exitos=('exitoso', 'sum')
-            ).reset_index()
-            
-            # Calculamos el porcentaje de éxito personal
-            stats['%_exito'] = (stats['exitos'] / stats['interacciones'] * 100).round(1)
-            
-            # 2. Cruzamos las estadísticas con los datos personales del estudiante
-            df_reporte = pd.merge(df_estudiantes, stats, left_on='id', right_on='estudiante_id', how='left')
-            
-            # 3. Filtramos y limpiamos los datos (los que no han participado tendrán 0)
-            df_reporte = df_reporte[['nombre', 'correo', 'nivel_general', 'interacciones', '%_exito']].fillna(0)
-            
-            # 4. Renombramos columnas para que se vea muy profesional tanto en web como en Excel
-            df_reporte.columns = ['Nombre del Alumno', 'Correo Institucional', 'Nivel Académico', 'Total Interacciones IA', 'Porcentaje de Éxito (%)']
-            
-            # 5. Mostramos la tabla DETALLADA en la pantalla (Esto soluciona lo de tu imagen)
-            st.dataframe(df_reporte, use_container_width=True)
-            
-            # 6. Convertimos esa misma tabla detallada a formato CSV listo para descargar
-            csv = df_reporte.to_csv(index=False).encode('utf-8')
-            
-            st.markdown("¿Necesitas pasar estas notas a tu sistema oficial? Descarga el consolidado:")
-            # 7. Creamos el botón de descarga
-            st.download_button(
-                label="⬇️ Descargar Reporte en Excel (CSV)",
-                data=csv,
-                file_name="reporte_notas_alternancia.csv",
-                mime="text/csv",
-                type="primary" 
-            )
+            try:
+                # 1. Extraer el historial de la nueva tabla
+                res_eval = supabase.table("evaluaciones").select("*").order("created_at", desc=True).execute()
+                
+                if not res_eval.data:
+                    st.info("Aún no hay actividades entregadas y evaluadas.")
+                else:
+                    df_eval = pd.DataFrame(res_eval.data)
+                    
+                    # 2. Cruzar los datos con los nombres de los estudiantes
+                    df_completo = pd.merge(df_eval, df_estudiantes[['id', 'nombre', 'correo', 'grado']], left_on='estudiante_id', right_on='id', how='left')
+                    
+                    # 3. Limpiar y ordenar las columnas
+                    df_completo = df_completo[['nombre', 'correo', 'grado', 'tarea', 'nota', 'feedback', 'created_at']]
+                    df_completo['created_at'] = pd.to_datetime(df_completo['created_at']).dt.strftime("%Y-%m-%d %H:%M")
+                    
+                    # 4. Renombrar para que se vea profesional
+                    df_completo.columns = ['Alumno', 'Correo', 'Grado', 'Actividad Evaluada', 'Nota /100', 'Feedback de la IA', 'Fecha de Entrega']
+                    
+                    # 5. Mostrar la tabla en pantalla
+                    st.dataframe(df_completo, use_container_width=True)
+                    
+                    # 6. Botón de exportación
+                    csv = df_completo.to_csv(index=False).encode('utf-8')
+                    st.markdown("¿Necesitas pasar estas notas a tu sistema oficial?")
+                    st.download_button(
+                        label="⬇️ Descargar Historial en Excel (CSV)",
+                        data=csv,
+                        file_name="historial_calificaciones_ia.csv",
+                        mime="text/csv",
+                        type="primary" 
+                    )
+            except Exception as e:
+                st.error(f"⚠️ Por favor crea la tabla 'evaluaciones' en Supabase para ver el historial de notas.")
 
 # ------------------------------------------
 # PESTAÑA 2: CARGADOR DE CLASES
@@ -157,8 +144,8 @@ with tab_cargador:
         tema_input = st.text_input("Tema Principal (Ej: Ciencias Naturales)")
         subtema_input = st.text_input("Subtema (Ej: El Sistema Solar)")
         texto_clase_input = st.text_area("Apuntes Oficiales de la Clase", height=200)
-        nivel_input = st.slider("Nivel de dificultad estimado", 1, 5, 2)
-        submit_btn = st.form_submit_button("🧠 Guardar Clase en el Cerebro")
+        nivel_input = st.slider("Nivel de dificultad", 1, 5, 2)
+        submit_btn = st.form_submit_button("🧠 Guardar Clase")
 
         if submit_btn:
             if not tema_input or not texto_clase_input:
@@ -178,17 +165,15 @@ with tab_cargador:
                         st.error(f"❌ Error: {e}")
 
 # ------------------------------------------
-# PESTAÑA 3: REGISTRO DE ESTUDIANTES (ACTUALIZADA CON EL GRADO)
+# PESTAÑA 3: REGISTRO DE ESTUDIANTES
 # ------------------------------------------
 with tab_registro:
     st.subheader("🧑‍🎓 Matricular Nuevo Estudiante")
-    st.markdown("Agrega a tus alumnos aquí especificando su grado escolar.")
-    
     with st.form("form_nuevo_alumno"):
         nombre_nuevo = st.text_input("Nombre Completo")
         correo_nuevo = st.text_input("Correo Institucional")
         grado_nuevo = st.selectbox("Grado del Estudiante", ["6to Grado", "7mo Grado", "8vo Grado", "9no Grado", "10mo Grado", "11vo Grado"])
-        nivel_nuevo = st.slider("Nivel académico inicial general", 1, 5, 2)
+        nivel_nuevo = st.slider("Nivel académico inicial", 1, 5, 2)
         
         btn_registrar = st.form_submit_button("✅ Registrar Estudiante")
         
@@ -209,42 +194,38 @@ with tab_registro:
                                 "grado": grado_nuevo,
                                 "nivel_general": nivel_nuevo
                             }).execute()
-                            st.success(f"🎉 ¡{nombre_nuevo} matriculado en {grado_nuevo}!")
+                            st.success(f"🎉 ¡{nombre_nuevo} matriculado con éxito!")
                     except Exception as e:
                         st.error(f"❌ Error: {e}")
 
 # ------------------------------------------
-# PESTAÑA 4: ASIGNAR TAREAS (¡NUEVO!)
+# PESTAÑA 4: ASIGNAR TAREAS
 # ------------------------------------------
 with tab_asignaciones:
     st.subheader("🎯 Asignar Actividades y Complejidad")
-    st.markdown("Dirige el aprendizaje de un estudiante dándole a la IA una misión y un nivel de exigencia específico.")
     
-    # 1. Obtenemos la lista actualizada de estudiantes
     res_lista = supabase.table("estudiantes").select("id, nombre, asignacion_actual, complejidad_asignacion").execute()
     df_lista = pd.DataFrame(res_lista.data)
     
     if df_lista.empty:
         st.warning("No hay estudiantes registrados aún.")
     else:
-        # 2. Selector de estudiante
         estudiante_seleccionado = st.selectbox(
             "Selecciona al alumno:", 
             options=df_lista['id'], 
             format_func=lambda x: df_lista[df_lista['id'] == x]['nombre'].values[0]
         )
         
-        # 3. Mostrar el estado actual de ese estudiante
         datos_estudiante = df_lista[df_lista['id'] == estudiante_seleccionado].iloc[0]
         tarea_previa = datos_estudiante['asignacion_actual'] if datos_estudiante['asignacion_actual'] else "Ninguna actividad asignada"
-        complejidad_previa = datos_estudiante['complejidad_asignacion'] if datos_estudiante['complejidad_asignacion'] else "Intermedio"
         
-        st.caption(f"📌 Estado actual: {tarea_previa} | Nivel: {complejidad_previa}")
+        st.caption(f"📌 Tarea actual: {tarea_previa}")
         
-        # 4. Formulario para asignar nueva tarea
         with st.form("form_asignacion"):
-            nueva_tarea = st.text_area("Instrucción o actividad a realizar (Ej: Realizar resumen de las mitocondrias, o Capacitación en pensamiento crítico):")
-            nueva_complejidad = st.radio("Nivel de exigencia para esta tarea:", ["Básico", "Intermedio", "Avanzado"], horizontal=True)
+            nueva_tarea = st.text_area("Instrucción o actividad a realizar:")
+            nueva_complejidad = st.radio("Nivel de exigencia:", ["Básico", "Intermedio", "Avanzado"], horizontal=True)
+            # ! NUEVO: Rúbrica personalizable por el docente al momento de asignar
+            nueva_rubrica = st.text_area("Rúbrica de evaluación (Opcional):", placeholder="Ej: Quita 10 puntos si tiene mala ortografía. Debe mencionar las 3 partes de la célula.")
             
             col1, col2 = st.columns(2)
             btn_asignar = col1.form_submit_button("🚀 Asignar a la IA")
@@ -252,19 +233,26 @@ with tab_asignaciones:
             
             if btn_asignar:
                 if nueva_tarea:
-                    supabase.table("estudiantes").update({
+                    datos_update = {
                         "asignacion_actual": nueva_tarea,
                         "complejidad_asignacion": nueva_complejidad
-                    }).eq("id", estudiante_seleccionado).execute()
-                    st.success("✅ Actividad asignada. La IA enfocará al alumno en esto.")
-                    st.rerun() # Recarga la página para mostrar los datos actualizados
+                    }
+                    if nueva_rubrica:
+                        datos_update["rubrica_evaluacion"] = nueva_rubrica
+                        
+                    supabase.table("estudiantes").update(datos_update).eq("id", estudiante_seleccionado).execute()
+                    st.success("✅ Actividad y rúbrica asignadas con éxito.")
+                    st.rerun()
                 else:
                     st.error("Debes escribir una tarea.")
                     
             if btn_limpiar:
                 supabase.table("estudiantes").update({
                     "asignacion_actual": None,
-                    "complejidad_asignacion": None
+                    "complejidad_asignacion": None,
+                    "rubrica_evaluacion": None,
+                    "ultima_nota": None,
+                    "ultimo_feedback": None
                 }).eq("id", estudiante_seleccionado).execute()
-                st.success("✅ Asignación borrada. La IA volverá a modo libre.")
+                st.success("✅ Asignación y notas borradas. La IA volverá a modo libre.")
                 st.rerun()
