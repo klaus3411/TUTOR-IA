@@ -14,6 +14,8 @@ st.set_page_config(page_title="Portal Educativo - Alternancia", page_icon="🏫"
 # --- VARIABLE DE BRANDING (Pon aquí el link de tu logo) ---
 URL_LOGO_COLEGIO = "https://scontent.fctg2-1.fna.fbcdn.net/v/t39.30808-6/377432631_785816130218699_8439928282516365142_n.jpg?stp=dst-jpg_tt6&cstp=mx1080x1080&ctp=s1080x1080&_nc_cat=111&ccb=1-7&_nc_sid=6ee11a&_nc_ohc=QkM_KdoM6-8Q7kNvwHZLafy&_nc_oc=Ado8PMT8UfZ5Na3A5PElaVATxsfC2uGumMesGdurEkH6giRzWqSz1reFRnxInqrbSwo&_nc_zt=23&_nc_ht=scontent.fctg2-1.fna&_nc_gid=8GpDrRfgp9dp29bAVZcYkg&_nc_ss=7b289&oh=00_AQA17yO0TLEY20eEhXYhcluOHLBzxi2TEmATg-_PeChiTg&oe=6A544484" 
 
+# ========================================== 
+
 # ==========================================
 # 1.5 INYECCIÓN PWA (App Instalable para Celulares)
 # ==========================================
@@ -130,31 +132,18 @@ def generar_respuesta(perfil, porcentaje_exito, pregunta):
     }).execute()
 
     if not resultados.data:
-        return "¡Hola! Qué buena pregunta. Sin embargo, ese tema aún no está en mis apuntes oficiales de la clase. ¿Por qué no lo anotas para preguntarle al profe en nuestra próxima sesión presencial? ¡Seguro le encantará tu curiosidad! 🌟"
+        return "Lo siento, ese tema aún no está en los apuntes oficiales de la institución. ¿Por qué no lo anotas para discutirlo con el docente en la próxima sesión presencial?"
 
     texto_oficial = resultados.data[0]["contenido_texto"]
     contenido_id = resultados.data[0]["id"]
 
-    # ==========================================
-    # MEJORA 1 y 3: Tono amigable y adaptación al grado
-    # ==========================================
-    grado_alumno = perfil.get('grado', 'un grado escolar')
-    instrucciones = f"""Eres un tutor pedagógico excepcionalmente amable, cálido, paciente y empático. 
-    Tu objetivo es hacer que el estudiante se sienta seguro y motivado. Celebra su esfuerzo y usa emojis amigables.
-    El estudiante está en: {grado_alumno}. Ajusta estrictamente tu vocabulario, ejemplos y nivel de abstracción para que un estudiante de {grado_alumno} lo entienda perfectamente. Usa el método socrático (guíalo con preguntas, nunca le des la respuesta directa)."""
+    instrucciones = "Eres un tutor pedagógico de apoyo institucional. Usa el método socrático (guía, no des respuestas directas)."
+    if porcentaje_exito < 40 or perfil['nivel_general'] == 1:
+        instrucciones += " ADAPTACIÓN: El alumno tiene dificultades. Usa analogías simples, lenguaje muy sencillo y sé muy empático."
+    elif porcentaje_exito > 80 or perfil['nivel_general'] >= 4:
+        instrucciones += " ADAPTACIÓN: El alumno es avanzado. Usa lenguaje académico y lánzale un reto intelectual al final."
 
-    # ==========================================
-    # MEJORA 2 y 4: Asignaciones específicas y complejidad
-    # ==========================================
-    tarea_actual = perfil.get('asignacion_actual')
-    complejidad = perfil.get('complejidad_asignacion', 'Intermedio')
-    
-    if tarea_actual:
-        instrucciones += f"""\n\nATENCIÓN: El profesor le ha asignado la siguiente meta/actividad específica a este estudiante: '{tarea_actual}'.
-        El nivel de complejidad exigido por el profesor para esta interacción es: {complejidad}.
-        Si el estudiante hace una pregunta general, guíalo sutilmente hacia el cumplimiento de esa actividad asignada, ajustando la dificultad de tus explicaciones al nivel '{complejidad}'."""
-
-    prompt_maestro = f"{instrucciones}\n\nSOLO USA ESTA INFO OFICIAL DEL COLEGIO:\n{texto_oficial}\n\nPREGUNTA DEL ALUMNO:\n{pregunta}"
+    prompt_maestro = f"{instrucciones}\n\nSOLO USA ESTA INFO OFICIAL:\n{texto_oficial}\n\nPREGUNTA DEL ALUMNO:\n{pregunta}"
 
     respuesta_ia = cliente_groq.chat.completions.create(
         messages=[{"role": "user", "content": prompt_maestro}],
@@ -170,7 +159,7 @@ def generar_respuesta(perfil, porcentaje_exito, pregunta):
     }).execute()
 
     return respuesta_ia.choices[0].message.content
-    
+
 # ==========================================
 # 4. INTERFAZ GRÁFICA (UI)
 # ==========================================
