@@ -132,7 +132,9 @@ st.divider()
 
 with st.sidebar:
     st.image(URL_LOGO_COLEGIO, width=120) 
-    st.header("Acceso")
+    
+    # --- RESTAURAMOS EL TÍTULO CORRECTO ---
+    st.header("Identificación Estudiantil")
     correo_input = st.text_input("Ingresa tu correo institucional:")
     
     if correo_input:
@@ -145,6 +147,11 @@ with st.sidebar:
         else:
             st.error("Correo no encontrado.")
             st.session_state['usuario_valido'] = False
+            
+    # --- BOTÓN DISCRETO PARA EL PROFESOR ---
+    st.divider()
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center;'><a href='/tablero_profesor' target='_self' style='color: #9CA3AF; text-decoration: none; font-size: 0.8rem;'>👨‍🏫 Acceso Docente</a></p>", unsafe_allow_html=True)
 
 # ==========================================
 # ÁREA PRINCIPAL: PANEL DE TUTORÍAS Y CHAT
@@ -233,7 +240,7 @@ if st.session_state.get('usuario_valido', False):
                             "feedback": datos_evaluacion['feedback']
                         }).execute()
                         
-                        # 2. Marcar la tutoría como completada para que desaparezca del panel
+                        # 2. Marcar la tutoría como completada
                         supabase.table("tutorias").update({"estado": "completada"}).eq("id", tutoria_actual['id']).execute()
                         
                         st.session_state['resultado_evaluacion'] = datos_evaluacion
