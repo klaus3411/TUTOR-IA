@@ -15,6 +15,7 @@ st.set_page_config(page_title="Portal Educativo - Alternancia", page_icon="🏫"
 URL_LOGO_COLEGIO = "https://scontent.fctg2-1.fna.fbcdn.net/v/t39.30808-6/377432631_785816130218699_8439928282516365142_n.jpg?stp=dst-jpg_tt6&cstp=mx1080x1080&ctp=s1080x1080&_nc_cat=111&ccb=1-7&_nc_sid=6ee11a&_nc_ohc=QkM_KdoM6-8Q7kNvwHZLafy&_nc_oc=Ado8PMT8UfZ5Na3A5PElaVATxsfC2uGumMesGdurEkH6giRzWqSz1reFRnxInqrbSwo&_nc_zt=23&_nc_ht=scontent.fctg2-1.fna&_nc_gid=8GpDrRfgp9dp29bAVZcYkg&_nc_ss=7b289&oh=00_AQA17yO0TLEY20eEhXYhcluOHLBzxi2TEmATg-_PeChiTg&oe=6A544484" 
 
 # ========================================== 
+
 # ==========================================
 # 1.5 INYECCIÓN PWA (App Instalable para Celulares)
 # ==========================================
@@ -94,7 +95,7 @@ components.html("""
 """, height=0)
 
 # ==========================================
-# 2. CARGA DE SISTEMAS EN MEMORIA (CACHE)
+# 2. CARGA DE SISTEMAS
 # ==========================================
 @st.cache_resource
 def iniciar_sistemas():
@@ -105,6 +106,49 @@ def iniciar_sistemas():
     return supabase, cliente_groq, modelo_vectores
 
 supabase, cliente_groq, modelo_vectores = iniciar_sistemas()
+
+# ==========================================
+# 3. FUNCIONES DEL TUTOR Y EVALUADOR
+# ==========================================
+def obtener_perfil(correo):
+    respuesta = supabase.table("estudiantes").select("*").eq("correo", correo).execute()
+    return respuesta.data[0] if respuesta.data else None
+
+def evaluar_actividad(perfil, historial_chat):
+    # La rúbrica viene de la base de datos (puedes agregar esta columna en Supabase)
+    rubrica = perfil.get('rubrica_evaluacion', 'Evalúa objetivamente del 0 al 100 basado en precisión, comprensión y esfuerzo.')
+    
+    prompt_evaluador = f"""
+    Eres un profesor estricto y justo. Evalúa el siguiente chat del alumno.
+    RÚBRICA DE EVALUACIÓN: {rubrica}
+    
+    CHAT DEL ALUMNO: {historial_chat}
+    
+    Genera un JSON con este formato:
+    {{
+        "nota": <numero_0_a_100>,
+        "feedback": "Tu retroalimentación detallada para la mejora continua",
+        "puntos_fuertes": "...",
+        "áreas_mejora": "..."
+    }}
+    """
+    respuesta = cliente_groq.chat.completions.create(
+        messages=[{"role": "user", "content": prompt_evaluador}],
+        model="llama-3.1-8b-instant",
+        response_format={"type": "json_object"}
+    )
+    return respuesta.choices[0].message.content
+
+def generar_respuesta(perfil, pregunta, historial):
+    tarea_actual = perfil.get('asignacion_actual')
+    instrucciones = f"Eres un tutor amable. El estudiante debe cumplir con: {tarea_actual}. Usa método socrático."
+    prompt = f"{instrucciones}\nHistorial reciente: {historial[-3:]}\nPregunta: {pregunta}"
+    
+    respuesta = cliente_groq.chat.completions.create(
+        messages=[{"role": "user", "content": prompt}],
+        model="llama-3.1-8b-instant"
+    )
+    return respuesta.choices[0].message.content
 
 # ==========================================
 # 3. FUNCIONES DEL TUTOR (Adaptadas para Web)
@@ -130,37 +174,19 @@ def generar_respuesta(perfil, porcentaje_exito, pregunta):
         "query_embedding": vector_pregunta, "match_threshold": 0.3, "match_count": 1 
     }).execute()
 
-    texto_oficial = "No hay apuntes específicos en la base de datos para esta pregunta."
-    contenido_id = None
-    
-    if resultados.data:
-        texto_oficial = resultados.data[0]["contenido_texto"]
-        contenido_id = resultados.data[0]["id"]
+    if not resultados.data:
+        return "Lo siento, ese tema aún no está en los apuntes oficiales de la institución. ¿Por qué no lo anotas para discutirlo con el docente en la próxima sesión presencial?"
 
-    # ==========================================
-    # MEJORA: Tono amigable y adaptación al grado
-    # ==========================================
-    grado_alumno = perfil.get('grado', 'un grado escolar')
-    instrucciones = f"""Eres un tutor pedagógico excepcionalmente amable, cálido, paciente y empático. 
-    Tu objetivo es hacer que el estudiante se sienta seguro y motivado. Celebra su esfuerzo y usa emojis amigables.
-    El estudiante está en: {grado_alumno}. Ajusta estrictamente tu vocabulario, ejemplos y nivel de abstracción para que un estudiante de {grado_alumno} lo entienda perfectamente. Usa el método socrático (guíalo con preguntas, nunca le des la respuesta directa)."""
+    texto_oficial = resultados.data[0]["contenido_texto"]
+    contenido_id = resultados.data[0]["id"]
 
-    # ==========================================
-    # MEJORA: Asignaciones específicas y complejidad
-    # ==========================================
-    tarea_actual = perfil.get('asignacion_actual')
-    complejidad = perfil.get('complejidad_asignacion', 'Intermedio')
-    
-    if tarea_actual:
-        instrucciones += f"""\n\nATENCIÓN: El profesor le ha asignado la siguiente meta/actividad específica a este estudiante: '{tarea_actual}'.
-        El nivel de complejidad exigido por el profesor para esta interacción es: {complejidad}.
-        Si el estudiante hace una pregunta general, guíalo sutilmente hacia el cumplimiento de esa actividad asignada, ajustando la dificultad de tus explicaciones al nivel '{complejidad}'."""
-    else:
-        # Si NO hay tarea asignada Y NO hay apuntes, bloqueamos para que no invente cosas
-        if not resultados.data:
-            return "¡Hola! Qué buena pregunta. Sin embargo, ese tema aún no está en mis apuntes oficiales de la institución y el profesor no te ha asignado una actividad al respecto. ¿Por qué no lo anotas para discutirlo con el docente en la próxima sesión presencial?"
+    instrucciones = "Eres un tutor pedagógico de apoyo institucional. Usa el método socrático (guía, no des respuestas directas)."
+    if porcentaje_exito < 40 or perfil['nivel_general'] == 1:
+        instrucciones += " ADAPTACIÓN: El alumno tiene dificultades. Usa analogías simples, lenguaje muy sencillo y sé muy empático."
+    elif porcentaje_exito > 80 or perfil['nivel_general'] >= 4:
+        instrucciones += " ADAPTACIÓN: El alumno es avanzado. Usa lenguaje académico y lánzale un reto intelectual al final."
 
-    prompt_maestro = f"{instrucciones}\n\nSOLO USA ESTA INFO OFICIAL DEL COLEGIO (Si aplica):\n{texto_oficial}\n\nPREGUNTA DEL ALUMNO:\n{pregunta}"
+    prompt_maestro = f"{instrucciones}\n\nSOLO USA ESTA INFO OFICIAL:\n{texto_oficial}\n\nPREGUNTA DEL ALUMNO:\n{pregunta}"
 
     respuesta_ia = cliente_groq.chat.completions.create(
         messages=[{"role": "user", "content": prompt_maestro}],
@@ -168,14 +194,12 @@ def generar_respuesta(perfil, porcentaje_exito, pregunta):
         temperature=0.7
     )
     
-    # Solo guardamos en historial si consultó un contenido específico
-    if contenido_id:
-        supabase.table("historial_aprendizaje").insert({
-            "estudiante_id": perfil['id'],
-            "contenido_id": contenido_id,
-            "fue_exitoso": True, 
-            "observaciones": "Consulta web completada"
-        }).execute()
+    supabase.table("historial_aprendizaje").insert({
+        "estudiante_id": perfil['id'],
+        "contenido_id": contenido_id,
+        "fue_exitoso": True, 
+        "observaciones": "Consulta web completada"
+    }).execute()
 
     return respuesta_ia.choices[0].message.content
 
@@ -237,11 +261,6 @@ with st.sidebar:
 # Sistema de Chat
 if st.session_state.get('usuario_valido', False):
     
-    # NUEVO: CAJA VERDE DE MISIÓN VISUAL
-    tarea_actual = st.session_state['perfil'].get('asignacion_actual')
-    if tarea_actual:
-        st.success(f"🎯 **Tu Misión Actual:** {tarea_actual}")
-    
     if "mensajes" not in st.session_state:
         st.session_state.mensajes = [{"role": "assistant", "content": f"¡Hola {st.session_state['perfil']['nombre']}! Soy el Tutor IA oficial del colegio. ¿Qué tema de nuestra clase te gustaría repasar hoy?"}]
 
@@ -252,7 +271,7 @@ if st.session_state.get('usuario_valido', False):
         with st.chat_message(mensaje["role"], avatar=avatar_icon):
             st.markdown(mensaje["content"])
 
-    if pregunta := st.chat_input("Escribe tu duda aquí..."):
+    if pregunta := st.chat_input("Escribe tu duda aquí (ej: ¿Cuáles son las partes de la célula?)..."):
         
         with st.chat_message("user", avatar="🧑‍🎓"):
             st.markdown(pregunta)
@@ -260,7 +279,7 @@ if st.session_state.get('usuario_valido', False):
 
         # Mostrar "Escribiendo..." con el logo del colegio
         with st.chat_message("assistant", avatar=URL_LOGO_COLEGIO):
-            with st.spinner("Pensando respuesta..."):
+            with st.spinner("Revisando los apuntes oficiales..."):
                 respuesta = generar_respuesta(st.session_state['perfil'], st.session_state['exito'], pregunta)
                 st.markdown(respuesta)
         
@@ -271,6 +290,6 @@ else:
     <div class="info-card">
         <h4>🔒 Portal de Acceso Restringido</h4>
         <p>Por favor, usa el <b>panel izquierdo</b> para ingresar tu correo y desbloquear tus herramientas de estudio.</p>
-        <p><i>💡 Tip de prueba: Usa el correo de uno de tus alumnos matriculados</i></p>
+        <p><i>💡 Tip de prueba: Usa <code>carlos.mendoza@ejemplo.com</code></i></p>
     </div>
     """, unsafe_allow_html=True)
