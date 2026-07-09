@@ -73,24 +73,34 @@ def obtener_perfil(correo):
     return respuesta.data[0] if respuesta.data else None
 
 def evaluar_actividad(tutoria, historial_mensajes):
-    """Evalúa la actividad leyendo el chat completo, incluyendo imágenes subidas."""
-    rubrica = tutoria.get('rubrica') or 'Evalúa objetivamente del 0 al 100.'
+    """Motor de evaluación objetivo usando Cadena de Pensamiento para evitar notas repetidas."""
+    rubrica = tutoria.get('rubrica') or 'Resta puntos por falta de profundidad, errores técnicos o si la respuesta es muy corta.'
     tarea = tutoria['mision']
     
     # Detectamos si hay alguna imagen en la conversación para cambiar de modelo
     tiene_imagen = any(isinstance(m['content'], list) for m in historial_mensajes)
     modelo_eval = "llama-3.2-11b-vision-preview" if tiene_imagen else "llama-3.1-8b-instant"
     
+    # ! NUEVO: Instrucciones estrictas y matemáticas para la IA
     prompt_sistema = f"""
-    Eres un profesor de {tutoria['asignatura']}. Tu tarea es EVALUAR la interacción y los archivos/imágenes enviados por el alumno.
-    TAREA ASIGNADA: {tarea}
-    RÚBRICA: {rubrica}
+    Eres un profesor EVALUADOR ESTRICTO Y ALTAMENTE OBJETIVO de {tutoria['asignatura']}.
+    Tu tarea es CALIFICAR la interacción del estudiante basándote ÚNICAMENTE en la evidencia del chat y archivos enviados.
     
-    Lee atentamente toda la conversación. Al final, genera un reporte de evaluación en formato JSON exacto:
+    TAREA ASIGNADA: {tarea}
+    RÚBRICA DE PENALIZACIÓN: {rubrica}
+    
+    INSTRUCCIONES DE CALIFICACIÓN (CUMPLE ESTO ESTRICTAMENTE):
+    1. NO REGALES NOTA. Si el estudiante solo dijo "hola", no hizo la tarea o la evadió, la nota debe ser menor a 30 (incluso 0).
+    2. Si la respuesta es mediocre, copiada o incompleta, la nota debe estar entre 40 y 60.
+    3. Solo da más de 85 si el estudiante resolvió PERFECTAMENTE la misión.
+    4. Inicia en 100 y RESTA puntos por cada error, falta de análisis o pereza al responder.
+    
+    Genera un reporte en formato JSON exacto:
     {{
-        "nota": <número 0 al 100>,
-        "feedback": "<Retroalimentación principal>",
-        "puntos_fuertes": "<Qué hizo bien>",
+        "razonamiento_secreto": "<Obligatorio: Escribe aquí por qué le vas a poner la nota, qué le faltó y cuántos puntos le restas>",
+        "nota": <número entero estricto del 0 al 100 basado en tu razonamiento>,
+        "feedback": "<Retroalimentación directa y constructiva para el estudiante>",
+        "puntos_fuertes": "<Qué hizo bien (o 'Ninguno' si no hizo nada)>",
         "areas_mejora": "<En qué debe mejorar>"
     }}
     """
@@ -99,22 +109,20 @@ def evaluar_actividad(tutoria, historial_mensajes):
     for msg in historial_mensajes:
         mensajes_api.append({"role": msg["role"], "content": msg["content"]})
         
-    mensajes_api.append({"role": "user", "content": "Genera la evaluación en formato JSON de acuerdo a las reglas ahora mismo."})
+    mensajes_api.append({"role": "user", "content": "Analiza paso a paso y genera la evaluación en formato JSON ahora mismo."})
     
     opciones_api = {
         "messages": mensajes_api,
         "model": modelo_eval,
-        "temperature": 0.1
+        "temperature": 0.1 # Temperatura baja para que sea analítico y no creativo
     }
     
-    # El modelo de visión a veces es delicado con forzar el JSON, así que aplicamos regex seguro
     if not tiene_imagen:
         opciones_api["response_format"] = {"type": "json_object"}
         
     respuesta = cliente_groq.chat.completions.create(**opciones_api)
     contenido = respuesta.choices[0].message.content
     
-    # Extraemos el JSON a la fuerza por si el modelo de visión agregó texto extra
     match = re.search(r'\{.*\}', contenido, re.DOTALL)
     if match:
         return match.group(0)
@@ -301,33 +309,47 @@ else:
                         st.caption("📄 PDF adjuntado")
 
                 with st.chat_message("assistant", avatar=URL_LOGO_COLEGIO):
-                    with st.spinner("Revisando..."):
-                        respuesta = generar_respuesta(perfil_actual, tutoria_actual, st.session_state.mensajes)
+                    with st.spinner("Escribiendo..."):
+                        respuesta = generar_respuesta(perfil_actual, tutoria_actual, pregunta, st.session_state.mensajes)
                         st.markdown(respuesta)
                 
                 st.session_state.mensajes.append({"role": "assistant", "content": respuesta})
                 st.rerun() 
 
-            # --- BOTÓN DE EVALUACIÓN ---
             st.divider()
-            if st.button("📤 Entregar Actividad para Evaluar", type="primary", use_container_width=True):
-                with st.spinner("🧑‍🏫 Evaluando tu desempeño de manera objetiva..."):
-                    try:
-                        resultado_json_str = evaluar_actividad(tutoria_actual, st.session_state.mensajes)
-                        datos_evaluacion = json.loads(resultado_json_str) 
-                        
-                        supabase.table("evaluaciones").insert({
-                            "estudiante_id": perfil_actual['id'],
-                            "tarea": tutoria_actual['mision'],
-                            "nota": datos_evaluacion['nota'],
-                            "feedback": datos_evaluacion['feedback']
-                        }).execute()
-                        
-                        supabase.table("tutorias").update({"estado": "completada"}).eq("id", tutoria_actual['id']).execute()
-                        st.session_state['resultado_evaluacion'] = datos_evaluacion
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Hubo un error al generar la evaluación: {e}")
+            
+            # --- Validar que el estudiante haya participado ---
+            ha_interactuado = len(st.session_state.mensajes) > 1
+            if not ha_interactuado:
+                st.info("💡 Escribe al menos un mensaje o sube tu archivo en el chat antes de entregar la actividad.")
+
+            col_vacia, col_boton = st.columns([2, 1])
+            with col_boton:
+                if st.button("📤 Entregar Actividad para Evaluar", type="primary", use_container_width=True, disabled=not ha_interactuado):
+                    historial_texto = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.mensajes])
+                    
+                    with st.spinner("🧑‍🏫 Evaluando desempeño de manera objetiva..."):
+                        try:
+                            # 1. Llamamos a la IA para que evalúe
+                            resultado_json_str = evaluar_actividad(tutoria_actual, st.session_state.mensajes)
+                            datos_evaluacion = json.loads(resultado_json_str)
+                            
+                            # 2. Guardamos en el historial de base de datos
+                            supabase.table("evaluaciones").insert({
+                                "estudiante_id": perfil_actual['id'],
+                                "tarea": tutoria_actual['mision'],
+                                "nota": datos_evaluacion['nota'],
+                                "feedback": datos_evaluacion['feedback']
+                            }).execute()
+                            
+                            # 3. Marcamos la tutoría como completada
+                            supabase.table("tutorias").update({"estado": "completada"}).eq("id", tutoria_actual['id']).execute()
+                            
+                            # 4. Actualizamos la sesión para mostrar los resultados
+                            st.session_state['resultado_evaluacion'] = datos_evaluacion
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Hubo un error al generar la evaluación: {e}")
         
         # --- PANTALLA REPORTE FINAL ---
         else:
