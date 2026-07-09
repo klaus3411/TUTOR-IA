@@ -1,20 +1,34 @@
 import streamlit as st
 import os
-import json  # ¡ESTA ES LA LÍNEA QUE SOLUCIONA TU ERROR!
+import json
+import base64
+import re
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from groq import Groq
 from sentence_transformers import SentenceTransformer
 import streamlit.components.v1 as components
 
+# Intentamos importar pypdf, si no está, avisaremos en la interfaz
+try:
+    from pypdf import PdfReader
+    PDF_DISPONIBLE = True
+except ImportError:
+    PDF_DISPONIBLE = False
+
 # ==========================================
 # 1. CONFIGURACIÓN DE LA PÁGINA WEB
 # ==========================================
-st.set_page_config(page_title="Portal Educativo - Alternancia", page_icon="🏫", layout="centered")
+st.set_page_config(page_title="Portal Educativo - Estudiante", page_icon="🏫", layout="centered")
 
-# --- VARIABLE DE BRANDING (Pon aquí el link de tu logo) ---
+st.markdown("""
+<style>
+    [data-testid="stSidebar"] {display: none !important;}
+    [data-testid="collapsedControl"] {display: none !important;}
+</style>
+""", unsafe_allow_html=True)
+
 URL_LOGO_COLEGIO = "https://scontent.fctg2-1.fna.fbcdn.net/v/t39.30808-6/377432631_785816130218699_8439928282516365142_n.jpg?stp=dst-jpg_tt6&cstp=mx1080x1080&ctp=s1080x1080&_nc_cat=111&ccb=1-7&_nc_sid=6ee11a&_nc_ohc=QkM_KdoM6-8Q7kNvwHZLafy&_nc_oc=Ado8PMT8UfZ5Na3A5PElaVATxsfC2uGumMesGdurEkH6giRzWqSz1reFRnxInqrbSwo&_nc_zt=23&_nc_ht=scontent.fctg2-1.fna&_nc_gid=8GpDrRfgp9dp29bAVZcYkg&_nc_ss=7b289&oh=00_AQA17yO0TLEY20eEhXYhcluOHLBzxi2TEmATg-_PeChiTg&oe=6A544484" 
-
 
 # ==========================================
 # 1.5 INYECCIÓN PWA (App Instalable)
@@ -52,25 +66,27 @@ def iniciar_sistemas():
 supabase, cliente_groq, modelo_vectores = iniciar_sistemas()
 
 # ==========================================
-# 3. FUNCIONES DEL TUTOR Y EVALUADOR
+# 3. FUNCIONES DEL TUTOR Y EVALUADOR MULTIMODAL
 # ==========================================
 def obtener_perfil(correo):
     respuesta = supabase.table("estudiantes").select("*").eq("correo", correo).execute()
     return respuesta.data[0] if respuesta.data else None
 
-def evaluar_actividad(tutoria, historial_chat):
-    rubrica = tutoria.get('rubrica') or 'Evalúa de forma estricta del 0 al 100 qué tanto entendió el estudiante el tema. Revisa su esfuerzo y precisión.'
-    tarea_asignada = tutoria['mision']
+def evaluar_actividad(tutoria, historial_mensajes):
+    """Evalúa la actividad leyendo el chat completo, incluyendo imágenes subidas."""
+    rubrica = tutoria.get('rubrica') or 'Evalúa objetivamente del 0 al 100.'
+    tarea = tutoria['mision']
     
-    prompt_evaluador = f"""
-    Eres un profesor de {tutoria['asignatura']}. Tu tarea es EVALUAR la interacción.
-    TAREA ASIGNADA: {tarea_asignada}
+    # Detectamos si hay alguna imagen en la conversación para cambiar de modelo
+    tiene_imagen = any(isinstance(m['content'], list) for m in historial_mensajes)
+    modelo_eval = "llama-3.2-11b-vision-preview" if tiene_imagen else "llama-3.1-8b-instant"
+    
+    prompt_sistema = f"""
+    Eres un profesor de {tutoria['asignatura']}. Tu tarea es EVALUAR la interacción y los archivos/imágenes enviados por el alumno.
+    TAREA ASIGNADA: {tarea}
     RÚBRICA: {rubrica}
     
-    HISTORIAL DE LA CONVERSACIÓN:
-    {historial_chat}
-    
-    Genera tu respuesta ÚNICAMENTE en JSON con este formato exacto:
+    Lee atentamente toda la conversación. Al final, genera un reporte de evaluación en formato JSON exacto:
     {{
         "nota": <número 0 al 100>,
         "feedback": "<Retroalimentación principal>",
@@ -79,45 +95,72 @@ def evaluar_actividad(tutoria, historial_chat):
     }}
     """
     
-    respuesta = cliente_groq.chat.completions.create(
-        messages=[{"role": "user", "content": prompt_evaluador}],
-        model="llama-3.1-8b-instant",
-        response_format={"type": "json_object"},
-        temperature=0.1 
-    )
-    return respuesta.choices[0].message.content
+    mensajes_api = [{"role": "system", "content": prompt_sistema}]
+    for msg in historial_mensajes:
+        mensajes_api.append({"role": msg["role"], "content": msg["content"]})
+        
+    mensajes_api.append({"role": "user", "content": "Genera la evaluación en formato JSON de acuerdo a las reglas ahora mismo."})
+    
+    opciones_api = {
+        "messages": mensajes_api,
+        "model": modelo_eval,
+        "temperature": 0.1
+    }
+    
+    # El modelo de visión a veces es delicado con forzar el JSON, así que aplicamos regex seguro
+    if not tiene_imagen:
+        opciones_api["response_format"] = {"type": "json_object"}
+        
+    respuesta = cliente_groq.chat.completions.create(**opciones_api)
+    contenido = respuesta.choices[0].message.content
+    
+    # Extraemos el JSON a la fuerza por si el modelo de visión agregó texto extra
+    match = re.search(r'\{.*\}', contenido, re.DOTALL)
+    if match:
+        return match.group(0)
+    return contenido
 
-def generar_respuesta(perfil, tutoria, pregunta, historial_chat):
-    vector_pregunta = modelo_vectores.encode(pregunta).tolist()
+def generar_respuesta(perfil, tutoria, historial_mensajes):
+    # Extraer el texto de la última pregunta para buscar en los apuntes
+    ultimo_msj = historial_mensajes[-1]["content"]
+    texto_busqueda = "Explicación de tarea"
+    
+    if isinstance(ultimo_msj, str):
+        texto_busqueda = ultimo_msj
+    elif isinstance(ultimo_msj, list):
+        for item in ultimo_msj:
+            if item["type"] == "text":
+                texto_busqueda = item["text"]
+
+    vector_pregunta = modelo_vectores.encode(texto_busqueda).tolist()
     resultados = supabase.rpc("match_contenido_curricular", {
         "query_embedding": vector_pregunta, "match_threshold": 0.3, "match_count": 1 
     }).execute()
 
-    texto_oficial = "No hay apuntes específicos en la base de datos para esta pregunta."
+    texto_oficial = "No hay apuntes específicos en la base de datos para esto."
     if resultados.data:
         texto_oficial = resultados.data[0]["contenido_texto"]
 
     grado = perfil.get('grado', 'un grado escolar')
-    
-    instrucciones = f"""Eres un tutor pedagógico de {tutoria['asignatura']}, excepcionalmente amable. 
-    El estudiante está en: {grado}. Usa el método socrático y guíalo a resolver su tarea.
-    
-    REGLAS ESTRICTAS:
-    1. Escribe ÚNICAMENTE tu próximo turno. NUNCA asumas la respuesta del alumno.
-    2. Haz UNA SOLA pregunta a la vez.
-    
+    instrucciones = f"""Eres un tutor pedagógico de {tutoria['asignatura']}. El estudiante está en {grado}.
     MISIÓN DEL ALUMNO: {tutoria['mision']}
     COMPLEJIDAD: {tutoria['complejidad']}
+    
+    REGLAS:
+    1. Si el alumno sube una imagen o PDF, analízalo cuidadosamente.
+    2. Haz UNA SOLA pregunta a la vez. No simules la respuesta del estudiante.
     """
 
+    tiene_imagen = any(isinstance(m['content'], list) for m in historial_mensajes[-5:])
+    modelo_chat = "llama-3.2-11b-vision-preview" if tiene_imagen else "llama-3.1-8b-instant"
+
     mensajes_api = [{"role": "system", "content": f"{instrucciones}\n\nINFO OFICIAL:\n{texto_oficial}"}]
-    
-    for msg in historial_chat[-8:]:
+    for msg in historial_mensajes[-8:]: # Mandamos los últimos 8 mensajes de contexto
         mensajes_api.append({"role": msg["role"], "content": msg["content"]})
 
     respuesta_ia = cliente_groq.chat.completions.create(
         messages=mensajes_api,
-        model="llama-3.1-8b-instant",
+        model=modelo_chat,
         temperature=0.7
     )
     return respuesta_ia.choices[0].message.content
@@ -125,22 +168,17 @@ def generar_respuesta(perfil, tutoria, pregunta, historial_chat):
 # ==========================================
 # 4. INTERFAZ GRÁFICA (UI)
 # ==========================================
-
-# --- PANTALLA 1: INICIO DE SESIÓN CENTRALIZADO ---
 if not st.session_state.get('usuario_valido', False):
     st.markdown("<br><br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
-    
     with col2:
         st.markdown(f"<div style='text-align: center;'><img src='{URL_LOGO_COLEGIO}' width='150' style='border-radius: 50%;'></div>", unsafe_allow_html=True)
         st.markdown("<h2 style='text-align: center;'>Portal Educativo</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: #4B5563;'>Ingresa para ver tus tutorías pendientes.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #4B5563;'>Ingresa para ver tus misiones.</p>", unsafe_allow_html=True)
         
         with st.form("login_form"):
             correo_input = st.text_input("✉️ Correo Institucional:")
-            btn_ingresar = st.form_submit_button("Ingresar", type="primary", use_container_width=True)
-            
-            if btn_ingresar:
+            if st.form_submit_button("Ingresar", type="primary", use_container_width=True):
                 if correo_input:
                     perfil = obtener_perfil(correo_input.strip().lower())
                     if perfil:
@@ -150,16 +188,11 @@ if not st.session_state.get('usuario_valido', False):
                     else:
                         st.error("Correo no encontrado en el sistema.")
                 else:
-                    st.warning("Por favor, ingresa tu correo.")
-                    
-        # Enlace secreto para el docente
+                    st.warning("Ingresa tu correo.")
         st.markdown("<br><p style='text-align: center;'><a href='/tablero_profesor' target='_self' style='color: #9CA3AF; text-decoration: none; font-size: 0.8rem;'>👨‍🏫 Acceso Docente</a></p>", unsafe_allow_html=True)
 
-# --- PANTALLA 2: PORTAL DEL ALUMNO (SOLO SE VE AL INICIAR SESIÓN) ---
 else:
     perfil_actual = st.session_state['perfil']
-    
-    # Encabezado con botón de cerrar sesión
     col_saludo, col_salir = st.columns([3, 1])
     with col_saludo:
         st.markdown(f"### 👋 Hola, {perfil_actual['nombre']}")
@@ -170,80 +203,119 @@ else:
             
     st.divider()
     
-    # Si el alumno NO ha seleccionado una tutoría, mostramos su PANEL DE MISIONES
+    # PANTALLA: SELECCIÓN DE MISIONES
     if 'tutoria_activa' not in st.session_state:
         st.subheader("📚 Tus Tutorías Pendientes")
-        
         try:
             res_tutorias = supabase.table("tutorias").select("*").eq("estudiante_id", perfil_actual['id']).eq("estado", "pendiente").execute()
             tutorias_pendientes = res_tutorias.data
             
             if not tutorias_pendientes:
-                st.success("¡Felicidades! No tienes tutorías pendientes en este momento. Eres libre. 🎉")
+                st.success("¡Felicidades! No tienes tutorías pendientes. Eres libre. 🎉")
             else:
-                st.markdown("Selecciona la asignatura con la que deseas trabajar hoy:")
-                
-                # Crear "Tarjetas" visuales para cada tutoría
                 for tutoria in tutorias_pendientes:
                     with st.container():
                         st.markdown(f"""
-                        <div style="background-color: #f3f4f6; padding: 20px; border-radius: 10px; margin-bottom: 10px; border-left: 5px solid #4F46E5; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-                            <h3 style="margin-top: 0; color: #1E3A8A;">📘 {tutoria['asignatura']}</h3>
+                        <div style="background-color: #f3f4f6; padding: 20px; border-radius: 10px; margin-bottom: 10px; border-left: 5px solid #4F46E5;">
+                            <h3 style="margin-top: 0;">📘 {tutoria['asignatura']}</h3>
                             <p><b>Misión:</b> {tutoria['mision']}</p>
-                            <p><small><i>Nivel de exigencia: {tutoria['complejidad']}</i></small></p>
                         </div>
                         """, unsafe_allow_html=True)
-                        
-                        if st.button(f"🚀 Iniciar tutoría de {tutoria['asignatura']}", key=tutoria['id'], type="primary"):
+                        if st.button(f"Entrar a tutoría de {tutoria['asignatura']}", key=tutoria['id'], type="primary"):
                             st.session_state['tutoria_activa'] = tutoria
-                            st.session_state['mensajes'] = [{"role": "assistant", "content": f"¡Hola! Soy tu tutor especializado en **{tutoria['asignatura']}**. Hoy tenemos la siguiente misión: *{tutoria['mision']}*. ¿Estás listo para empezar?"}]
+                            st.session_state['mensajes'] = [{"role": "assistant", "content": f"¡Hola! Hoy tenemos la misión: *{tutoria['mision']}*. ¿Empezamos?"}]
                             st.rerun()
         except Exception as e:
-            st.error("Error al cargar las tutorías. Pide al profesor que verifique la plataforma.")
+            st.error("Error al cargar las tutorías.")
             
-    # Si el alumno YA SELECCIONÓ una tutoría, mostramos el CHAT EXCLUSIVO
+    # PANTALLA: CHAT DE LA TUTORÍA Y CARGA DE ARCHIVOS
     else:
         tutoria_actual = st.session_state['tutoria_activa']
         
-        # Botón para regresar al panel
         if st.button("⬅️ Volver a mis misiones", use_container_width=False):
             del st.session_state['tutoria_activa']
-            if 'resultado_evaluacion' in st.session_state:
-                del st.session_state['resultado_evaluacion']
+            if 'resultado_evaluacion' in st.session_state: del st.session_state['resultado_evaluacion']
             st.rerun()
             
-        st.success(f"🎯 **Asignatura:** {tutoria_actual['asignatura']} | **Misión:** {tutoria_actual['mision']}")
+        st.success(f"🎯 **{tutoria_actual['asignatura']}:** {tutoria_actual['mision']}")
 
-        # Si aún no ha sido evaluado, mostramos el chat
         if 'resultado_evaluacion' not in st.session_state:
+            
+            # --- RENDERIZADO DEL CHAT VISUAL (Soporta Texto e Imágenes) ---
             for mensaje in st.session_state.mensajes:
                 avatar_icon = "🧑‍🎓" if mensaje["role"] == "user" else URL_LOGO_COLEGIO
                 with st.chat_message(mensaje["role"], avatar=avatar_icon):
-                    st.markdown(mensaje["content"])
+                    if isinstance(mensaje["content"], list):
+                        for item in mensaje["content"]:
+                            if item["type"] == "text":
+                                st.markdown(item["text"])
+                            elif item["type"] == "image_url":
+                                b64_img = item["image_url"]["url"].split(",")[1]
+                                st.image(base64.b64decode(b64_img), width=350)
+                    else:
+                        st.markdown(mensaje["content"])
 
-            if pregunta := st.chat_input("Escribe tu mensaje..."):
+            # --- ZONA DE ADJUNTAR ARCHIVOS ---
+            with st.expander("📎 Adjuntar Imagen o Documento PDF para tu tarea"):
+                archivo_subido = st.file_uploader("Sube una foto de tu cuaderno o un archivo PDF, y luego escribe en el chat para enviarlo.", type=["pdf", "png", "jpg", "jpeg"])
+                if archivo_subido:
+                    st.success(f"Archivo listo. Escribe un mensaje abajo y presiona Enter para enviarlo.")
+
+            # --- ENTRADA DEL CHAT ---
+            if pregunta := st.chat_input("Escribe tu mensaje para enviar..."):
+                contenido_final = pregunta
+                
+                # Procesar si hay un archivo adjunto
+                if archivo_subido is not None:
+                    if archivo_subido.type == "application/pdf":
+                        if PDF_DISPONIBLE:
+                            try:
+                                lector = PdfReader(archivo_subido)
+                                texto_pdf = "\n".join([pagina.extract_text() for pagina in lector.pages])
+                                contenido_final = f"{pregunta}\n\n[DOCUMENTO PDF ADJUNTO POR ESTUDIANTE]:\n{texto_pdf}"
+                                st.session_state.mensajes.append({"role": "user", "content": contenido_final})
+                            except Exception as e:
+                                st.error(f"Error al leer PDF: {e}")
+                                st.session_state.mensajes.append({"role": "user", "content": pregunta})
+                        else:
+                            st.error("Lector PDF no disponible. El profesor debe ejecutar: pip install pypdf")
+                            st.session_state.mensajes.append({"role": "user", "content": pregunta})
+                    
+                    elif archivo_subido.type in ["image/jpeg", "image/png", "image/jpg"]:
+                        bytes_data = archivo_subido.getvalue()
+                        base64_encoded = base64.b64encode(bytes_data).decode('utf-8')
+                        contenido_final = [
+                            {"type": "text", "text": pregunta},
+                            {"type": "image_url", "image_url": {"url": f"data:{archivo_subido.type};base64,{base64_encoded}"}}
+                        ]
+                        st.session_state.mensajes.append({"role": "user", "content": contenido_final})
+                else:
+                    st.session_state.mensajes.append({"role": "user", "content": contenido_final})
+
+                # --- GENERAR RESPUESTA DE LA IA ---
                 with st.chat_message("user", avatar="🧑‍🎓"):
                     st.markdown(pregunta)
-                st.session_state.mensajes.append({"role": "user", "content": pregunta})
+                    if archivo_subido and archivo_subido.type.startswith("image"):
+                        st.caption("📷 Imagen adjuntada")
+                    elif archivo_subido and archivo_subido.type == "application/pdf":
+                        st.caption("📄 PDF adjuntado")
 
                 with st.chat_message("assistant", avatar=URL_LOGO_COLEGIO):
-                    with st.spinner("Escribiendo..."):
-                        respuesta = generar_respuesta(perfil_actual, tutoria_actual, pregunta, st.session_state.mensajes)
+                    with st.spinner("Revisando..."):
+                        respuesta = generar_respuesta(perfil_actual, tutoria_actual, st.session_state.mensajes)
                         st.markdown(respuesta)
                 
                 st.session_state.mensajes.append({"role": "assistant", "content": respuesta})
                 st.rerun() 
 
+            # --- BOTÓN DE EVALUACIÓN ---
             st.divider()
             if st.button("📤 Entregar Actividad para Evaluar", type="primary", use_container_width=True):
-                historial_texto = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.mensajes])
-                
-                with st.spinner("🧑‍🏫 Evaluando desempeño de manera objetiva..."):
+                with st.spinner("🧑‍🏫 Evaluando tu desempeño de manera objetiva..."):
                     try:
-                        resultado_json_str = evaluar_actividad(tutoria_actual, historial_texto)
+                        resultado_json_str = evaluar_actividad(tutoria_actual, st.session_state.mensajes)
                         datos_evaluacion = json.loads(resultado_json_str) 
                         
-                        # 1. Guardar en el historial de evaluaciones
                         supabase.table("evaluaciones").insert({
                             "estudiante_id": perfil_actual['id'],
                             "tarea": tutoria_actual['mision'],
@@ -251,29 +323,22 @@ else:
                             "feedback": datos_evaluacion['feedback']
                         }).execute()
                         
-                        # 2. Marcar la tutoría como completada
                         supabase.table("tutorias").update({"estado": "completada"}).eq("id", tutoria_actual['id']).execute()
-                        
                         st.session_state['resultado_evaluacion'] = datos_evaluacion
                         st.rerun()
                     except Exception as e:
                         st.error(f"Hubo un error al generar la evaluación: {e}")
         
-        # Mostrar el reporte si ya se evaluó
+        # --- PANTALLA REPORTE FINAL ---
         else:
             datos = st.session_state['resultado_evaluacion']
             st.markdown("### 📊 Actividad Completada y Evaluada")
-            
             color_nota = "green" if datos['nota'] >= 60 else "red"
             st.markdown(f"<h1 style='text-align: center; color: {color_nota}; font-size: 4rem;'>{datos['nota']}/100</h1>", unsafe_allow_html=True)
-            
             st.info(f"**🗣️ Comentario:**\n{datos['feedback']}")
             col_buenas, col_mejoras = st.columns(2)
-            with col_buenas:
-                st.success(f"**✅ Puntos Fuertes:**\n{datos['puntos_fuertes']}")
-            with col_mejoras:
-                st.warning(f"**📈 Áreas de Mejora:**\n{datos['areas_mejora']}")
-            
+            with col_buenas: st.success(f"**✅ Puntos Fuertes:**\n{datos['puntos_fuertes']}")
+            with col_mejoras: st.warning(f"**📈 Áreas de Mejora:**\n{datos['areas_mejora']}")
             if st.button("Regresar a mis misiones", type="primary"):
                 del st.session_state['tutoria_activa']
                 del st.session_state['resultado_evaluacion']
