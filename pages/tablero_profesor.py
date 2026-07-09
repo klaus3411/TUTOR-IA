@@ -107,18 +107,42 @@ with tab_analiticas:
                     st.line_chart(actividad_diaria)
 
             # ==========================================
-            # TABLA: HISTORIAL COMPLETO DE EVALUACIONES
+            # TABLA 1: REGISTRO GENERAL DE ESTUDIANTES
             # ==========================================
             st.divider()
-            st.subheader("📋 Historial de Calificaciones")
-            st.markdown("Registro de todas las actividades entregadas y evaluadas por la IA en el tiempo.")
+            st.subheader("📋 Lista de Estudiantes Matriculados")
+            st.markdown("Revisa quiénes están inscritos y qué actividad tienen asignada actualmente.")
+            
+            if not df_estudiantes.empty:
+                # Preparamos las columnas que queremos mostrar
+                columnas_mostrar = ['nombre', 'correo', 'grado', 'nivel_general', 'asignacion_actual']
+                # Nos aseguramos de que las columnas existan para evitar errores
+                for col in columnas_mostrar:
+                    if col not in df_estudiantes.columns:
+                        df_estudiantes[col] = "N/A"
+                        
+                df_registro = df_estudiantes[columnas_mostrar].copy()
+                df_registro.columns = ['Nombre del Alumno', 'Correo', 'Grado', 'Nivel Base', 'Misión / Tarea Actual']
+                
+                # Rellenar valores nulos (tareas no asignadas) con "Ninguna"
+                df_registro = df_registro.fillna('Ninguna')
+                st.dataframe(df_registro, use_container_width=True)
+            else:
+                st.info("No hay estudiantes matriculados en el sistema.")
+
+            # ==========================================
+            # TABLA 2: HISTORIAL COMPLETO DE EVALUACIONES
+            # ==========================================
+            st.divider()
+            st.subheader("📝 Historial de Calificaciones y Entregas")
+            st.markdown("Registro de todas las actividades que los alumnos ya entregaron y que la IA evaluó.")
             
             try:
                 # 1. Extraer el historial de la nueva tabla
                 res_eval = supabase.table("evaluaciones").select("*").order("created_at", desc=True).execute()
                 
                 if not res_eval.data:
-                    st.info("Aún no hay actividades entregadas y evaluadas.")
+                    st.info("Aún no hay actividades entregadas y evaluadas en el historial.")
                 else:
                     df_eval = pd.DataFrame(res_eval.data)
                     
