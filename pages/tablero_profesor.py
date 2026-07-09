@@ -45,10 +45,11 @@ supabase = iniciar_conexion()
 # ==========================================
 # 4. INTERFAZ DE PESTAÑAS (TABS)
 # ==========================================
-tab_analiticas, tab_cargador, tab_registro = st.tabs([
-    "📊 Analíticas de Estudiantes", 
-    "🧠 Enseñar a la IA (Cargar Clase)",
-    "🧑‍🎓 Registrar Estudiantes"
+tab_analiticas, tab_cargador, tab_registro, tab_asignaciones = st.tabs([
+    "📊 Analíticas", 
+    "🧠 Enseñar a la IA",
+    "🧑‍🎓 Matricular",
+    "🎯 Asignar Tareas"
 ])
 
 # ------------------------------------------
@@ -177,16 +178,17 @@ with tab_cargador:
                         st.error(f"❌ Error: {e}")
 
 # ------------------------------------------
-# PESTAÑA 3: REGISTRO DE ESTUDIANTES 
+# PESTAÑA 3: REGISTRO DE ESTUDIANTES (ACTUALIZADA CON EL GRADO)
 # ------------------------------------------
 with tab_registro:
     st.subheader("🧑‍🎓 Matricular Nuevo Estudiante")
-    st.markdown("Agrega a tus alumnos aquí para que puedan iniciar sesión en el portal.")
+    st.markdown("Agrega a tus alumnos aquí especificando su grado escolar.")
     
     with st.form("form_nuevo_alumno"):
-        nombre_nuevo = st.text_input("Nombre Completo (Ej: Ana Gómez)")
-        correo_nuevo = st.text_input("Correo Institucional (Ej: ana.gomez@colegio.edu.co)")
-        nivel_nuevo = st.slider("Nivel académico inicial (1 = Básico, 5 = Avanzado)", 1, 5, 2)
+        nombre_nuevo = st.text_input("Nombre Completo")
+        correo_nuevo = st.text_input("Correo Institucional")
+        grado_nuevo = st.selectbox("Grado del Estudiante", ["6to Grado", "7mo Grado", "8vo Grado", "9no Grado", "10mo Grado", "11vo Grado"])
+        nivel_nuevo = st.slider("Nivel académico inicial general", 1, 5, 2)
         
         btn_registrar = st.form_submit_button("✅ Registrar Estudiante")
         
@@ -195,17 +197,74 @@ with tab_registro:
                 st.error("⚠️ El nombre y el correo son obligatorios.")
             else:
                 correo_limpio = correo_nuevo.strip().lower()
-                with st.spinner("Registrando en la base de datos..."):
+                with st.spinner("Registrando..."):
                     try:
                         validacion = supabase.table("estudiantes").select("id").eq("correo", correo_limpio).execute()
                         if validacion.data:
-                            st.warning(f"⚠️ El correo {correo_limpio} ya está registrado.")
+                            st.warning("⚠️ Este correo ya está registrado.")
                         else:
                             supabase.table("estudiantes").insert({
                                 "nombre": nombre_nuevo,
                                 "correo": correo_limpio,
+                                "grado": grado_nuevo,
                                 "nivel_general": nivel_nuevo
                             }).execute()
-                            st.success(f"🎉 ¡{nombre_nuevo} matriculado con éxito! Ya puede iniciar sesión con el correo {correo_limpio}.")
+                            st.success(f"🎉 ¡{nombre_nuevo} matriculado en {grado_nuevo}!")
                     except Exception as e:
-                        st.error(f"❌ Ocurrió un error al conectar con la base de datos: {e}")                        
+                        st.error(f"❌ Error: {e}")
+
+# ------------------------------------------
+# PESTAÑA 4: ASIGNAR TAREAS (¡NUEVO!)
+# ------------------------------------------
+with tab_asignaciones:
+    st.subheader("🎯 Asignar Actividades y Complejidad")
+    st.markdown("Dirige el aprendizaje de un estudiante dándole a la IA una misión y un nivel de exigencia específico.")
+    
+    # 1. Obtenemos la lista actualizada de estudiantes
+    res_lista = supabase.table("estudiantes").select("id, nombre, asignacion_actual, complejidad_asignacion").execute()
+    df_lista = pd.DataFrame(res_lista.data)
+    
+    if df_lista.empty:
+        st.warning("No hay estudiantes registrados aún.")
+    else:
+        # 2. Selector de estudiante
+        estudiante_seleccionado = st.selectbox(
+            "Selecciona al alumno:", 
+            options=df_lista['id'], 
+            format_func=lambda x: df_lista[df_lista['id'] == x]['nombre'].values[0]
+        )
+        
+        # 3. Mostrar el estado actual de ese estudiante
+        datos_estudiante = df_lista[df_lista['id'] == estudiante_seleccionado].iloc[0]
+        tarea_previa = datos_estudiante['asignacion_actual'] if datos_estudiante['asignacion_actual'] else "Ninguna actividad asignada"
+        complejidad_previa = datos_estudiante['complejidad_asignacion'] if datos_estudiante['complejidad_asignacion'] else "Intermedio"
+        
+        st.caption(f"📌 Estado actual: {tarea_previa} | Nivel: {complejidad_previa}")
+        
+        # 4. Formulario para asignar nueva tarea
+        with st.form("form_asignacion"):
+            nueva_tarea = st.text_area("Instrucción o actividad a realizar (Ej: Realizar resumen de las mitocondrias, o Capacitación en pensamiento crítico):")
+            nueva_complejidad = st.radio("Nivel de exigencia para esta tarea:", ["Básico", "Intermedio", "Avanzado"], horizontal=True)
+            
+            col1, col2 = st.columns(2)
+            btn_asignar = col1.form_submit_button("🚀 Asignar a la IA")
+            btn_limpiar = col2.form_submit_button("🧹 Borrar asignación actual")
+            
+            if btn_asignar:
+                if nueva_tarea:
+                    supabase.table("estudiantes").update({
+                        "asignacion_actual": nueva_tarea,
+                        "complejidad_asignacion": nueva_complejidad
+                    }).eq("id", estudiante_seleccionado).execute()
+                    st.success("✅ Actividad asignada. La IA enfocará al alumno en esto.")
+                    st.rerun() # Recarga la página para mostrar los datos actualizados
+                else:
+                    st.error("Debes escribir una tarea.")
+                    
+            if btn_limpiar:
+                supabase.table("estudiantes").update({
+                    "asignacion_actual": None,
+                    "complejidad_asignacion": None
+                }).eq("id", estudiante_seleccionado).execute()
+                st.success("✅ Asignación borrada. La IA volverá a modo libre.")
+                st.rerun()
