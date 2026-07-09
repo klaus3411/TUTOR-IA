@@ -95,7 +95,7 @@ components.html("""
 """, height=0)
 
 # ==========================================
-# 2. CARGA DE SISTEMAS
+# 2. CARGA DE SISTEMAS EN MEMORIA (CACHE)
 # ==========================================
 @st.cache_resource
 def iniciar_sistemas():
@@ -106,49 +106,6 @@ def iniciar_sistemas():
     return supabase, cliente_groq, modelo_vectores
 
 supabase, cliente_groq, modelo_vectores = iniciar_sistemas()
-
-# ==========================================
-# 3. FUNCIONES DEL TUTOR Y EVALUADOR
-# ==========================================
-def obtener_perfil(correo):
-    respuesta = supabase.table("estudiantes").select("*").eq("correo", correo).execute()
-    return respuesta.data[0] if respuesta.data else None
-
-def evaluar_actividad(perfil, historial_chat):
-    # La rúbrica viene de la base de datos (puedes agregar esta columna en Supabase)
-    rubrica = perfil.get('rubrica_evaluacion', 'Evalúa objetivamente del 0 al 100 basado en precisión, comprensión y esfuerzo.')
-    
-    prompt_evaluador = f"""
-    Eres un profesor estricto y justo. Evalúa el siguiente chat del alumno.
-    RÚBRICA DE EVALUACIÓN: {rubrica}
-    
-    CHAT DEL ALUMNO: {historial_chat}
-    
-    Genera un JSON con este formato:
-    {{
-        "nota": <numero_0_a_100>,
-        "feedback": "Tu retroalimentación detallada para la mejora continua",
-        "puntos_fuertes": "...",
-        "áreas_mejora": "..."
-    }}
-    """
-    respuesta = cliente_groq.chat.completions.create(
-        messages=[{"role": "user", "content": prompt_evaluador}],
-        model="llama-3.1-8b-instant",
-        response_format={"type": "json_object"}
-    )
-    return respuesta.choices[0].message.content
-
-def generar_respuesta(perfil, pregunta, historial):
-    tarea_actual = perfil.get('asignacion_actual')
-    instrucciones = f"Eres un tutor amable. El estudiante debe cumplir con: {tarea_actual}. Usa método socrático."
-    prompt = f"{instrucciones}\nHistorial reciente: {historial[-3:]}\nPregunta: {pregunta}"
-    
-    respuesta = cliente_groq.chat.completions.create(
-        messages=[{"role": "user", "content": prompt}],
-        model="llama-3.1-8b-instant"
-    )
-    return respuesta.choices[0].message.content
 
 # ==========================================
 # 3. FUNCIONES DEL TUTOR (Adaptadas para Web)
