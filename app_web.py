@@ -59,7 +59,6 @@ def obtener_perfil(correo):
     return respuesta.data[0] if respuesta.data else None
 
 def evaluar_actividad(tutoria, historial_chat):
-    """Motor de evaluación objetivo usando los datos de la tutoría específica."""
     rubrica = tutoria.get('rubrica') or 'Evalúa de forma estricta del 0 al 100 qué tanto entendió el estudiante el tema. Revisa su esfuerzo y precisión.'
     tarea_asignada = tutoria['mision']
     
@@ -126,38 +125,50 @@ def generar_respuesta(perfil, tutoria, pregunta, historial_chat):
 # ==========================================
 # 4. INTERFAZ GRÁFICA (UI)
 # ==========================================
-st.title("🏫 Portal Educativo")
-st.markdown("<p style='font-size: 1.1rem; color: #4B5563;'>Tus tutorías personalizadas por asignatura.</p>", unsafe_allow_html=True)
-st.divider()
 
-with st.sidebar:
-    st.image(URL_LOGO_COLEGIO, width=120) 
+# --- PANTALLA 1: INICIO DE SESIÓN CENTRALIZADO ---
+if not st.session_state.get('usuario_valido', False):
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
     
-    # --- RESTAURAMOS EL TÍTULO CORRECTO ---
-    st.header("Identificación Estudiantil")
-    correo_input = st.text_input("Ingresa tu correo institucional:")
-    
-    if correo_input:
-        perfil = obtener_perfil(correo_input)
-        if perfil:
-            st.session_state['usuario_valido'] = True
-            st.session_state['perfil'] = perfil
-            st.markdown(f"### 👋 Hola, {perfil['nombre']}")
-            st.metric("Grado", perfil.get('grado', 'No asignado'))
-        else:
-            st.error("Correo no encontrado.")
-            st.session_state['usuario_valido'] = False
+    with col2:
+        st.markdown(f"<div style='text-align: center;'><img src='{URL_LOGO_COLEGIO}' width='150' style='border-radius: 50%;'></div>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center;'>Portal Educativo</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #4B5563;'>Ingresa para ver tus tutorías pendientes.</p>", unsafe_allow_html=True)
+        
+        with st.form("login_form"):
+            correo_input = st.text_input("✉️ Correo Institucional:")
+            btn_ingresar = st.form_submit_button("Ingresar", type="primary", use_container_width=True)
             
-    # --- BOTÓN DISCRETO PARA EL PROFESOR ---
-    st.divider()
-    st.markdown("<br><br><br>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center;'><a href='/tablero_profesor' target='_self' style='color: #9CA3AF; text-decoration: none; font-size: 0.8rem;'>👨‍🏫 Acceso Docente</a></p>", unsafe_allow_html=True)
+            if btn_ingresar:
+                if correo_input:
+                    perfil = obtener_perfil(correo_input.strip().lower())
+                    if perfil:
+                        st.session_state['usuario_valido'] = True
+                        st.session_state['perfil'] = perfil
+                        st.rerun()
+                    else:
+                        st.error("Correo no encontrado en el sistema.")
+                else:
+                    st.warning("Por favor, ingresa tu correo.")
+                    
+        # Enlace secreto para el docente
+        st.markdown("<br><p style='text-align: center;'><a href='/tablero_profesor' target='_self' style='color: #9CA3AF; text-decoration: none; font-size: 0.8rem;'>👨‍🏫 Acceso Docente</a></p>", unsafe_allow_html=True)
 
-# ==========================================
-# ÁREA PRINCIPAL: PANEL DE TUTORÍAS Y CHAT
-# ==========================================
-if st.session_state.get('usuario_valido', False):
+# --- PANTALLA 2: PORTAL DEL ALUMNO (SOLO SE VE AL INICIAR SESIÓN) ---
+else:
     perfil_actual = st.session_state['perfil']
+    
+    # Encabezado con botón de cerrar sesión
+    col_saludo, col_salir = st.columns([3, 1])
+    with col_saludo:
+        st.markdown(f"### 👋 Hola, {perfil_actual['nombre']}")
+    with col_salir:
+        if st.button("🚪 Salir", use_container_width=True):
+            st.session_state.clear()
+            st.rerun()
+            
+    st.divider()
     
     # Si el alumno NO ha seleccionado una tutoría, mostramos su PANEL DE MISIONES
     if 'tutoria_activa' not in st.session_state:
@@ -176,14 +187,14 @@ if st.session_state.get('usuario_valido', False):
                 for tutoria in tutorias_pendientes:
                     with st.container():
                         st.markdown(f"""
-                        <div style="background-color: #f3f4f6; padding: 20px; border-radius: 10px; margin-bottom: 10px; border-left: 5px solid #4F46E5;">
-                            <h3 style="margin-top: 0;">📘 {tutoria['asignatura']}</h3>
+                        <div style="background-color: #f3f4f6; padding: 20px; border-radius: 10px; margin-bottom: 10px; border-left: 5px solid #4F46E5; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                            <h3 style="margin-top: 0; color: #1E3A8A;">📘 {tutoria['asignatura']}</h3>
                             <p><b>Misión:</b> {tutoria['mision']}</p>
-                            <p><small><i>Nivel: {tutoria['complejidad']}</i></small></p>
+                            <p><small><i>Nivel de exigencia: {tutoria['complejidad']}</i></small></p>
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        if st.button(f"Entrar a tutoría de {tutoria['asignatura']}", key=tutoria['id'], type="primary"):
+                        if st.button(f"🚀 Iniciar tutoría de {tutoria['asignatura']}", key=tutoria['id'], type="primary"):
                             st.session_state['tutoria_activa'] = tutoria
                             st.session_state['mensajes'] = [{"role": "assistant", "content": f"¡Hola! Soy tu tutor especializado en **{tutoria['asignatura']}**. Hoy tenemos la siguiente misión: *{tutoria['mision']}*. ¿Estás listo para empezar?"}]
                             st.rerun()
@@ -195,7 +206,7 @@ if st.session_state.get('usuario_valido', False):
         tutoria_actual = st.session_state['tutoria_activa']
         
         # Botón para regresar al panel
-        if st.button("⬅️ Volver a mis tutorías", use_container_width=False):
+        if st.button("⬅️ Volver a mis misiones", use_container_width=False):
             del st.session_state['tutoria_activa']
             if 'resultado_evaluacion' in st.session_state:
                 del st.session_state['resultado_evaluacion']
@@ -263,15 +274,7 @@ if st.session_state.get('usuario_valido', False):
             with col_mejoras:
                 st.warning(f"**📈 Áreas de Mejora:**\n{datos['areas_mejora']}")
             
-            if st.button("Regresar al Panel Principal", type="primary"):
+            if st.button("Regresar a mis misiones", type="primary"):
                 del st.session_state['tutoria_activa']
                 del st.session_state['resultado_evaluacion']
                 st.rerun()
-
-else:
-    st.markdown("""
-    <div class="info-card" style="padding: 20px; background-color: #f3f4f6; border-radius: 10px; margin-top: 20px;">
-        <h4>🔒 Portal de Acceso Restringido</h4>
-        <p>Por favor, usa el <b>panel izquierdo</b> para ingresar tu correo y descubrir tus misiones pendientes.</p>
-    </div>
-    """, unsafe_allow_html=True)
