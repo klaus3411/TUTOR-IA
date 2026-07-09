@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import json  # ¡ESTA ES LA LÍNEA QUE SOLUCIONA TU ERROR!
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from groq import Groq
@@ -75,21 +76,27 @@ def obtener_perfil(correo):
 
 def evaluar_actividad(perfil, historial_chat):
     """Motor de evaluación objetivo y estructurado en JSON."""
+    # Extraemos la rúbrica y LA TAREA para dárselas al evaluador
     rubrica = perfil.get('rubrica_evaluacion', 'Evalúa de forma estricta del 0 al 100 qué tanto entendió el estudiante el tema tratado. Revisa si cumplió la actividad asignada, su esfuerzo y la precisión de sus respuestas.')
+    tarea_asignada = perfil.get('asignacion_actual', 'No hay una tarea específica asignada. Evalúa la comprensión general del tema.')
     
     prompt_evaluador = f"""
     Eres un profesor estricto, justo y objetivo. Tu tarea NO es hablar con el alumno, sino EVALUAR la interacción completa que acaba de tener con el tutor de IA.
     
+    TAREA ASIGNADA AL ESTUDIANTE:
+    {tarea_asignada}
+
     RÚBRICA DE EVALUACIÓN:
     {rubrica}
     
     HISTORIAL DE LA CONVERSACIÓN (Estudiante y Tutor):
     {historial_chat}
     
+    Evalúa si el estudiante cumplió con la TAREA ASIGNADA basándote en la RÚBRICA leyendo todo el historial.
     Debes generar tu respuesta ÚNICAMENTE en formato JSON válido con la siguiente estructura exacta:
     {{
         "nota": <número entero del 0 al 100>,
-        "feedback": "<Un párrafo corto y directo con la retroalimentación principal>",
+        "feedback": "<Un párrafo corto y directo con la retroalimentación principal sobre su desempeño en la tarea>",
         "puntos_fuertes": "<Qué hizo bien el estudiante>",
         "areas_mejora": "<En qué debe mejorar para la próxima vez>"
     }}
@@ -103,7 +110,6 @@ def evaluar_actividad(perfil, historial_chat):
     )
     return respuesta.choices[0].message.content
 
-# ! NUEVO: Agregamos el historial_chat como parámetro para darle memoria a la IA
 def generar_respuesta(perfil, porcentaje_exito, pregunta, historial_chat):
     """El cerebro del Tutor Adaptativo (RAG + Prompting con Memoria)"""
     vector_pregunta = modelo_vectores.encode(pregunta).tolist()
@@ -120,7 +126,6 @@ def generar_respuesta(perfil, porcentaje_exito, pregunta, historial_chat):
 
     grado_alumno = perfil.get('grado', 'un grado escolar')
     
-    # ! NUEVO: Reglas Anti-Monólogo estrictas
     instrucciones = f"""Eres un tutor pedagógico excepcionalmente amable y empático. 
     El estudiante está en: {grado_alumno}. Ajusta estrictamente tu vocabulario y ejemplos para que un estudiante de {grado_alumno} lo entienda perfectamente. Usa el método socrático.
     
@@ -141,10 +146,8 @@ def generar_respuesta(perfil, porcentaje_exito, pregunta, historial_chat):
         if not resultados.data:
             return "¡Hola! Esa es una gran pregunta. Sin embargo, ese tema aún no está en mis apuntes oficiales y no tienes una actividad asignada al respecto. ¿Qué te parece si lo anotas para la próxima clase con el profe?"
 
-    # ! NUEVO: Construcción de la memoria del chat para enviar a Groq
     mensajes_api = [{"role": "system", "content": f"{instrucciones}\n\nSOLO USA ESTA INFO OFICIAL (Si aplica):\n{texto_oficial}"}]
     
-    # Pasamos los últimos 8 mensajes para que la IA entienda el contexto de la conversación
     for msg in historial_chat[-8:]:
         mensajes_api.append({"role": msg["role"], "content": msg["content"]})
 
@@ -197,22 +200,18 @@ with st.sidebar:
 # ==========================================
 if st.session_state.get('usuario_valido', False):
     
-    # 1. Mostrar la Misión / Tarea Actual en verde
     tarea_actual = st.session_state['perfil'].get('asignacion_actual')
     if tarea_actual:
         st.success(f"🎯 **Tu Misión Actual:** {tarea_actual}")
     
-    # 2. Inicializar el historial de chat
     if "mensajes" not in st.session_state:
         st.session_state.mensajes = [{"role": "assistant", "content": f"¡Hola {st.session_state['perfil']['nombre']}! Estoy aquí para ayudarte a completar tu actividad. ¿Por dónde empezamos?"}]
 
-    # 3. Dibujar el chat
     for mensaje in st.session_state.mensajes:
         avatar_icon = "🧑‍🎓" if mensaje["role"] == "user" else URL_LOGO_COLEGIO
         with st.chat_message(mensaje["role"], avatar=avatar_icon):
             st.markdown(mensaje["content"])
 
-    # 4. Capturar mensaje del usuario
     if pregunta := st.chat_input("Escribe tu duda aquí..."):
         with st.chat_message("user", avatar="🧑‍🎓"):
             st.markdown(pregunta)
@@ -220,19 +219,16 @@ if st.session_state.get('usuario_valido', False):
 
         with st.chat_message("assistant", avatar=URL_LOGO_COLEGIO):
             with st.spinner("Pensando respuesta..."):
-                # ! NUEVO: Aquí ahora enviamos 'st.session_state.mensajes' como cuarto parámetro
                 respuesta = generar_respuesta(st.session_state['perfil'], st.session_state['exito'], pregunta, st.session_state.mensajes)
                 st.markdown(respuesta)
         
         st.session_state.mensajes.append({"role": "assistant", "content": respuesta})
-        st.rerun() # Recarga para acomodar los mensajes
+        st.rerun() 
 
-    # 5. EL NUEVO BOTÓN DE EVALUACIÓN
     st.divider()
     col_vacia, col_boton = st.columns([2, 1])
     with col_boton:
         if st.button("📤 Entregar Actividad para Evaluar", type="primary", use_container_width=True):
-            # Formateamos el chat para que el evaluador lo lea bien
             historial_texto = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.mensajes])
             
             with st.spinner("🧑‍🏫 Evaluando desempeño de manera objetiva..."):
@@ -243,7 +239,6 @@ if st.session_state.get('usuario_valido', False):
                 except Exception as e:
                     st.error(f"Hubo un error al generar la evaluación: {e}")
     
-    # 6. MOSTRAR EL REPORTE DE EVALUACIÓN SI EXISTE
     if 'resultado_evaluacion' in st.session_state:
         datos = st.session_state['resultado_evaluacion']
         st.markdown("### 📊 Reporte de Evaluación")
