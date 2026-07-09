@@ -87,11 +87,24 @@ with tab_analiticas:
 
                 col1, col2, col3, col4 = st.columns(4)
                 col1.metric("Total Alumnos", total_alumnos)
-            with col_der:
-                st.subheader("👥 Actividad Reciente")
-                df_historial["fecha"] = pd.to_datetime(df_historial["fecha"]).dt.date
-                actividad_diaria = df_historial.groupby("fecha").size()
-                st.line_chart(actividad_diaria)
+                col2.metric("Interacciones IA", total_interacciones)
+                col3.metric("Tasa de Éxito", f"{tasa_exito_global:.1f}%")
+                col4.metric("🚨 Repasar en Clase", tema_critico)
+
+                st.divider()
+
+                col_izq, col_der = st.columns(2)
+
+                with col_izq:
+                    st.subheader("📊 Rendimiento por Tema")
+                    exito_tema = df_historial.groupby("tema")["exitoso"].mean() * 100
+                    st.bar_chart(exito_tema)
+
+                with col_der:
+                    st.subheader("👥 Actividad Reciente")
+                    df_historial["fecha"] = pd.to_datetime(df_historial["fecha"]).dt.date
+                    actividad_diaria = df_historial.groupby("fecha").size()
+                    st.line_chart(actividad_diaria)
 
             # ==========================================
             # TABLA: HISTORIAL COMPLETO DE EVALUACIONES
@@ -134,6 +147,9 @@ with tab_analiticas:
                     )
             except Exception as e:
                 st.error(f"⚠️ Por favor crea la tabla 'evaluaciones' en Supabase para ver el historial de notas.")
+        
+        except Exception as e:
+            st.error(f"Ocurrió un error general cargando las analíticas: {e}")
 
 # ------------------------------------------
 # PESTAÑA 2: CARGADOR DE CLASES
@@ -224,7 +240,6 @@ with tab_asignaciones:
         with st.form("form_asignacion"):
             nueva_tarea = st.text_area("Instrucción o actividad a realizar:")
             nueva_complejidad = st.radio("Nivel de exigencia:", ["Básico", "Intermedio", "Avanzado"], horizontal=True)
-            # ! NUEVO: Rúbrica personalizable por el docente al momento de asignar
             nueva_rubrica = st.text_area("Rúbrica de evaluación (Opcional):", placeholder="Ej: Quita 10 puntos si tiene mala ortografía. Debe mencionar las 3 partes de la célula.")
             
             col1, col2 = st.columns(2)
