@@ -126,7 +126,6 @@ def evaluar_actividad(tutoria, historial_mensajes):
     for msg in historial_mensajes:
         mensajes_api.append({"role": msg["role"], "content": msg["content"]})
         
-    # LÍNEA CORREGIDA AQUÍ (Se añadió la llave de apertura '{')
     mensajes_api.append({"role": "user", "content": "Analiza paso a paso y genera la evaluación en formato JSON ahora mismo."})
     
     opciones_api = {
@@ -209,6 +208,9 @@ if not st.session_state.get('usuario_valido', False):
                         st.error("Correo no encontrado en el sistema.")
                 else:
                     st.warning("Ingresa tu correo.")
+                    
+        # LÍNEA RESTAURADA AQUÍ (Acceso Docente discreto al fondo del formulario)
+        st.markdown("<br><p style='text-align: center;'><a href='/tablero_profesor' target='_self' style='color: #9CA3AF; text-decoration: none; font-size: 0.8rem;'>👨‍🏫 Acceso Docente</a></p>", unsafe_allow_html=True)
 
 else:
     perfil_actual = st.session_state['perfil']
