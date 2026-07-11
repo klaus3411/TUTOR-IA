@@ -71,10 +71,10 @@ with tab_analiticas:
             else:
                 st.info("No hay estudiantes matriculados en el sistema.")
 
-            # --- TABLA 2: HISTORIAL DE EVALUACIONES ---
+            # --- TABLA 2: HISTORIAL DE EVALUACIONES (Resumen) ---
             st.divider()
             st.subheader("📝 Historial de Calificaciones y Entregas")
-            st.markdown("Registro de todas las actividades entregadas y evaluadas por la IA.")
+            st.markdown("Registro general de todas las actividades entregadas y evaluadas por la IA.")
             
             try:
                 res_eval = supabase.table("evaluaciones").select("*").order("created_at", desc=True).execute()
@@ -84,16 +84,34 @@ with tab_analiticas:
                 else:
                     df_eval = pd.DataFrame(res_eval.data)
                     df_completo = pd.merge(df_eval, df_estudiantes[['id', 'nombre', 'correo', 'grado']], left_on='estudiante_id', right_on='id', how='left')
-                    df_completo = df_completo[['nombre', 'correo', 'grado', 'tarea', 'nota', 'feedback', 'created_at']]
-                    df_completo['created_at'] = pd.to_datetime(df_completo['created_at']).dt.strftime("%Y-%m-%d %H:%M")
+                    df_completo_mostrar = df_completo[['nombre', 'correo', 'grado', 'tarea', 'nota', 'feedback', 'created_at']].copy()
+                    df_completo_mostrar['created_at'] = pd.to_datetime(df_completo_mostrar['created_at']).dt.strftime("%Y-%m-%d %H:%M")
                     
-                    df_completo.columns = ['Alumno', 'Correo', 'Grado', 'Actividad Evaluada', 'Nota /100', 'Feedback de la IA', 'Fecha de Entrega']
-                    st.dataframe(df_completo, use_container_width=True)
+                    df_completo_mostrar.columns = ['Alumno', 'Correo', 'Grado', 'Actividad Evaluada', 'Nota /100', 'Feedback de la IA', 'Fecha de Entrega']
+                    st.dataframe(df_completo_mostrar, use_container_width=True)
                     
-                    csv = df_completo.to_csv(index=False).encode('utf-8')
+                    csv = df_completo_mostrar.to_csv(index=False).encode('utf-8')
                     st.download_button(label="⬇️ Descargar Historial en Excel", data=csv, file_name="historial_calificaciones.csv", mime="text/csv", type="primary")
+
+                    # --- NUEVO: TABLA 3 - AUDITORÍA Y EVIDENCIAS DETALLADAS ---
+                    st.divider()
+                    st.subheader("🔍 Auditoría Detallada de Entregas")
+                    st.markdown("Revisa exactamente qué archivos subió el alumno, los textos de sus PDFs y la conversación completa.")
+                    
+                    for item in res_eval.data:
+                        # Buscar el nombre del alumno para ponerlo en el título
+                        nombre_al = df_estudiantes[df_estudiantes['id'] == item['estudiante_id']]['nombre'].values[0] if not df_estudiantes[df_estudiantes['id'] == item['estudiante_id']].empty else "Alumno Desconocido"
+                        fecha_corta = item['created_at'][:10]
+                        
+                        # Creamos el menú desplegable para cada entrega
+                        with st.expander(f"📚 {nombre_al} | {item['tarea']} | Nota: {item['nota']}/100"):
+                            st.write(f"**🗣️ Feedback de la IA:** {item['feedback']}")
+                            st.markdown("**📂 Evidencia del Estudiante (Conversación y Archivos procesados):**")
+                            # Mostramos el JSON con toda la evidencia formateada
+                            st.code(item.get('historial_evidencia', 'No hay evidencia guardada (asegúrate de haber creado la columna historial_evidencia en Supabase).'), language="json")
+
             except Exception as e:
-                st.error(f"⚠️ Error cargando historial de notas. Asegúrate de tener la tabla 'evaluaciones'.")
+                st.error(f"⚠️ Error cargando historial de notas. Asegúrate de tener la tabla 'evaluaciones' y la columna 'historial_evidencia'. Detalle: {e}")
         
         except Exception as e:
             st.error(f"Ocurrió un error general cargando las analíticas: {e}")
@@ -155,8 +173,8 @@ with tab_registro:
 # PESTAÑA 4: ASIGNAR TUTORÍAS 
 # ------------------------------------------
 with tab_asignaciones:
-    st.subheader("🎯 Asignar Tutorías por Asignatura")
-    st.markdown("Asigna misiones específicas. El alumno verá un panel con sus tutorías separadas por materia.")
+    st.subheader("🎯 Panel de Control de Tutorías")
+    st.markdown("Selecciona un alumno para ver sus tareas pendientes y asignarle nuevas misiones.")
     
     res_lista = supabase.table("estudiantes").select("id, nombre").execute()
     df_lista = pd.DataFrame(res_lista.data)
@@ -164,55 +182,55 @@ with tab_asignaciones:
     if df_lista.empty:
         st.warning("No hay estudiantes registrados aún.")
     else:
-        with st.form("form_asignacion"):
-            col1, col2 = st.columns(2)
-            with col1:
-                estudiante_seleccionado = st.selectbox("1. Selecciona al alumno:", options=df_lista['id'], format_func=lambda x: df_lista[df_lista['id'] == x]['nombre'].values[0])
-            with col2:
-                asignatura = st.selectbox("2. Área / Asignatura:", ["Biología", "Matemáticas", "Física", "Química", "Lenguaje", "Historia", "Inglés", "Otra"])
-            
-            nueva_tarea = st.text_area("3. Instrucción o actividad a realizar (Ej: Explicar las partes de la célula):")
-            nueva_complejidad = st.radio("4. Nivel de exigencia:", ["Básico", "Intermedio", "Avanzado"], horizontal=True)
-            nueva_rubrica = st.text_area("5. Rúbrica de evaluación (Opcional):", placeholder="Ej: Restar puntos si hay mala ortografía.")
-            
-            col_btn1, col_btn2 = st.columns(2)
-            if col_btn1.form_submit_button("🚀 Crear Tutoría"):
-                if nueva_tarea:
-                    try:
-                        supabase.table("tutorias").insert({
-                            "estudiante_id": estudiante_seleccionado, "asignatura": asignatura, "mision": nueva_tarea, 
-                            "complejidad": nueva_complejidad, "rubrica": nueva_rubrica, "estado": "pendiente"
-                        }).execute()
-                        st.success(f"✅ Tutoría de {asignatura} creada con éxito. El alumno la verá en su panel.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error al guardar. Detalle: {e}")
-                else:
-                    st.error("Debes escribir una tarea.")
-            
-            if col_btn2.form_submit_button("🧹 Borrar asignación actual"):
-                st.info("Para borrar tutorías, el alumno debe completarlas, o puedes gestionarlas directamente desde Supabase.")
+        estudiante_seleccionado = st.selectbox(
+            "👤 Selecciona al alumno:", 
+            options=df_lista['id'], 
+            format_func=lambda x: df_lista[df_lista['id'] == x]['nombre'].values[0]
+        )
         
+        nombre_estudiante = df_lista[df_lista['id'] == estudiante_seleccionado]['nombre'].values[0]
         st.divider()
-        st.subheader("📋 Tutorías Pendientes Activas")
         
-        # --- AQUÍ ESTÁ LA SOLUCIÓN AL ERROR DEL TABLERO ---
-        try:
-            # Traemos las tutorías pendientes sin el filtro complejo que causaba el error
-            res_tutorias = supabase.table("tutorias").select("*").eq("estado", "pendiente").order("created_at", desc=True).execute()
-            
-            if not res_tutorias.data:
-                st.info("No tienes alumnos con tutorías pendientes en este momento.")
-            else:
-                df_tut = pd.DataFrame(res_tutorias.data)
+        col_form, col_pendientes = st.columns([1, 1], gap="large")
+        
+        with col_form:
+            st.markdown(f"### 🚀 Nueva Misión para {nombre_estudiante}")
+            with st.form("form_asignacion"):
+                asignatura = st.selectbox("Área / Asignatura:", ["Biología", "Matemáticas", "Física", "Química", "Lenguaje", "Historia", "Inglés", "Otra"])
+                nueva_tarea = st.text_area("Instrucción o actividad (Ej: Explicar las partes de la célula):")
+                nueva_complejidad = st.radio("Nivel de exigencia:", ["Básico", "Intermedio", "Avanzado"], horizontal=True)
+                nueva_rubrica = st.text_area("Rúbrica de evaluación (Opcional):", placeholder="Ej: Restar puntos si hay mala ortografía.")
                 
-                # Cruzamos los IDs con la lista de alumnos directamente en Python con Pandas
-                df_tut = pd.merge(df_tut, df_lista[['id', 'nombre']], left_on='estudiante_id', right_on='id', how='left')
+                if st.form_submit_button("✅ Crear y Asignar Tutoría", type="primary"):
+                    if nueva_tarea:
+                        try:
+                            supabase.table("tutorias").insert({
+                                "estudiante_id": estudiante_seleccionado, 
+                                "asignatura": asignatura, 
+                                "mision": nueva_tarea, 
+                                "complejidad": nueva_complejidad, 
+                                "rubrica": nueva_rubrica, 
+                                "estado": "pendiente"
+                            }).execute()
+                            st.success(f"Tutoría de {asignatura} creada con éxito.")
+                            st.rerun() 
+                        except Exception as e:
+                            st.error(f"Error al guardar. Detalle: {e}")
+                    else:
+                        st.error("Debes escribir una tarea.")
+        
+        with col_pendientes:
+            st.markdown(f"### 📋 Misiones Pendientes")
+            try:
+                res_tutorias = supabase.table("tutorias").select("*").eq("estudiante_id", estudiante_seleccionado).eq("estado", "pendiente").order("created_at", desc=True).execute()
                 
-                # Dejamos la tabla limpia
-                df_tut = df_tut[['nombre', 'asignatura', 'mision', 'complejidad']]
-                df_tut.columns = ['Alumno', 'Asignatura', 'Misión Asignada', 'Complejidad']
-                
-                st.dataframe(df_tut, use_container_width=True)
-        except Exception as e:
-            st.error(f"Error al cargar las asignaciones pendientes. Detalle técnico: {e}")
+                if not res_tutorias.data:
+                    st.info(f"¡Excelente! **{nombre_estudiante}** está al día y no tiene tutorías pendientes.")
+                else:
+                    df_tut = pd.DataFrame(res_tutorias.data)
+                    df_tut = df_tut[['asignatura', 'mision', 'complejidad']]
+                    df_tut.columns = ['Asignatura', 'Misión Asignada', 'Nivel']
+                    st.dataframe(df_tut, use_container_width=True, hide_index=True)
+                    st.caption(f"Total pendientes: {len(df_tut)}")
+            except Exception as e:
+                st.error(f"Error al cargar las asignaciones pendientes. Detalle: {e}")
