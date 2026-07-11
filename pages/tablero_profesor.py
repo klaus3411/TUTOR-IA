@@ -93,25 +93,35 @@ with tab_analiticas:
                     csv = df_completo_mostrar.to_csv(index=False).encode('utf-8')
                     st.download_button(label="⬇️ Descargar Historial en Excel", data=csv, file_name="historial_calificaciones.csv", mime="text/csv", type="primary")
 
-                    # --- NUEVO: TABLA 3 - AUDITORÍA Y EVIDENCIAS DETALLADAS ---
+                    # --- NUEVO: TABLA 3 - AUDITORÍA DETALLADA Y BORRADO ---
                     st.divider()
                     st.subheader("🔍 Auditoría Detallada de Entregas")
-                    st.markdown("Revisa exactamente qué archivos subió el alumno, los textos de sus PDFs y la conversación completa.")
+                    st.markdown("Revisa la evidencia de los alumnos o **elimina los registros de prueba**.")
                     
                     for item in res_eval.data:
-                        # Buscar el nombre del alumno para ponerlo en el título
                         nombre_al = df_estudiantes[df_estudiantes['id'] == item['estudiante_id']]['nombre'].values[0] if not df_estudiantes[df_estudiantes['id'] == item['estudiante_id']].empty else "Alumno Desconocido"
                         fecha_corta = item['created_at'][:10]
                         
                         # Creamos el menú desplegable para cada entrega
                         with st.expander(f"📚 {nombre_al} | {item['tarea']} | Nota: {item['nota']}/100"):
                             st.write(f"**🗣️ Feedback de la IA:** {item['feedback']}")
-                            st.markdown("**📂 Evidencia del Estudiante (Conversación y Archivos procesados):**")
-                            # Mostramos el JSON con toda la evidencia formateada
-                            st.code(item.get('historial_evidencia', 'No hay evidencia guardada (asegúrate de haber creado la columna historial_evidencia en Supabase).'), language="json")
+                            st.markdown("**📂 Evidencia del Estudiante (Conversación y Archivos):**")
+                            st.code(item.get('historial_evidencia', 'No hay evidencia guardada.'), language="json")
+                            
+                            # --- EL BOTÓN DE ELIMINAR INDIVIDUAL ---
+                            col_vacia, col_borrar = st.columns([4, 1])
+                            with col_borrar:
+                                # Usamos el ID único de esta evaluación como clave (key) para el botón
+                                if st.button("🗑️ Eliminar registro", key=f"del_{item['id']}"):
+                                    try:
+                                        supabase.table("evaluaciones").delete().eq("id", item['id']).execute()
+                                        st.success("¡Registro eliminado con éxito!")
+                                        st.rerun() # Refresca la página automáticamente
+                                    except Exception as e:
+                                        st.error(f"Error al eliminar: {e}")
 
             except Exception as e:
-                st.error(f"⚠️ Error cargando historial de notas. Asegúrate de tener la tabla 'evaluaciones' y la columna 'historial_evidencia'. Detalle: {e}")
+                st.error(f"⚠️ Error cargando historial de notas. Asegúrate de tener la tabla 'evaluaciones'. Detalle: {e}")
         
         except Exception as e:
             st.error(f"Ocurrió un error general cargando las analíticas: {e}")
