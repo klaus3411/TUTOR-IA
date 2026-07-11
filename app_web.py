@@ -209,7 +209,6 @@ if not st.session_state.get('usuario_valido', False):
                 else:
                     st.warning("Ingresa tu correo.")
                     
-        # LÍNEA RESTAURADA AQUÍ (Acceso Docente discreto al fondo del formulario)
         st.markdown("<br><p style='text-align: center;'><a href='/tablero_profesor' target='_self' style='color: #9CA3AF; text-decoration: none; font-size: 0.8rem;'>👨‍🏫 Acceso Docente</a></p>", unsafe_allow_html=True)
 
 else:
@@ -225,60 +224,121 @@ else:
     st.divider()
     
     if 'tutoria_activa' not in st.session_state:
-        # --- VITRINA VISUAL DE MEDALLAS (GAMIFICACIÓN) ---
-        try:
-            res_med_db = supabase.table("medallas_ganadas").select("medalla_clave").eq("estudiante_id", perfil_actual['id']).execute()
-            claves_ganadas = [registro['medalla_clave'] for registro in res_med_db.data] if res_med_db.data else []
-            
-            st.markdown("#### 🏆 Tus Logros Académicos")
-            columnas_medallas = st.columns(len(MEDALLAS_MAESTRAS))
-            
-            for index, (clave, metadatos) in enumerate(MEDALLAS_MAESTRAS.items()):
-                with columnas_medallas[index]:
-                    if clave in claves_ganadas:
-                        st.markdown(f"""
-                        <div style="text-align: center; background-color: #f0fdf4; border: 2px solid #22c55e; padding: 12px; border-radius: 12px; min-height: 140px;">
-                            <span style="font-size: 2.2rem;">{metadatos['icono']}</span><br>
-                            <b style="font-size: 0.8rem; color: #166534; display: block; margin-top: 5px;">{metadatos['titulo']}</b>
-                            <p style="font-size: 0.65rem; color: #15803d; margin: 5px 0 0 0; line-height: 1.1;">{metadatos['desc']}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"""
-                        <div style="text-align: center; background-color: #f8fafc; border: 2px dashed #cbd5e1; padding: 12px; border-radius: 12px; min-height: 140px; opacity: 0.45;">
-                            <span style="font-size: 2.2rem; filter: grayscale(100%);">🔒</span><br>
-                            <b style="font-size: 0.8rem; color: #64748b; display: block; margin-top: 5px;">Bloqueado</b>
-                            <p style="font-size: 0.65rem; color: #94a3b8; margin: 5px 0 0 0; line-height: 1.1;">{metadatos['desc']}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-            st.write("")
-        except:
-            pass
+        # ==========================================
+        # SISTEMA DE PESTAÑAS (MISIONES vs RENDIMIENTO)
+        # ==========================================
+        tab_misiones, tab_rendimiento = st.tabs(["🎮 Mis Misiones", "📊 Mi Rendimiento"])
+        
+        # ------------------------------------------
+        # PESTAÑA 1: MIS MISIONES Y MEDALLAS
+        # ------------------------------------------
+        with tab_misiones:
+            try:
+                res_med_db = supabase.table("medallas_ganadas").select("medalla_clave").eq("estudiante_id", perfil_actual['id']).execute()
+                claves_ganadas = [registro['medalla_clave'] for registro in res_med_db.data] if res_med_db.data else []
+                
+                st.markdown("#### 🏆 Tus Logros Académicos")
+                columnas_medallas = st.columns(len(MEDALLAS_MAESTRAS))
+                
+                for index, (clave, metadatos) in enumerate(MEDALLAS_MAESTRAS.items()):
+                    with columnas_medallas[index]:
+                        if clave in claves_ganadas:
+                            st.markdown(f"""
+                            <div style="text-align: center; background-color: #f0fdf4; border: 2px solid #22c55e; padding: 12px; border-radius: 12px; min-height: 140px;">
+                                <span style="font-size: 2.2rem;">{metadatos['icono']}</span><br>
+                                <b style="font-size: 0.8rem; color: #166534; display: block; margin-top: 5px;">{metadatos['titulo']}</b>
+                                <p style="font-size: 0.65rem; color: #15803d; margin: 5px 0 0 0; line-height: 1.1;">{metadatos['desc']}</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"""
+                            <div style="text-align: center; background-color: #f8fafc; border: 2px dashed #cbd5e1; padding: 12px; border-radius: 12px; min-height: 140px; opacity: 0.45;">
+                                <span style="font-size: 2.2rem; filter: grayscale(100%);">🔒</span><br>
+                                <b style="font-size: 0.8rem; color: #64748b; display: block; margin-top: 5px;">Bloqueado</b>
+                                <p style="font-size: 0.65rem; color: #94a3b8; margin: 5px 0 0 0; line-height: 1.1;">{metadatos['desc']}</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                st.write("")
+            except:
+                pass
 
-        st.subheader("📚 Tus Tutorías Pendientes")
-        try:
-            res_tutorias = supabase.table("tutorias").select("*").eq("estudiante_id", perfil_actual['id']).eq("estado", "pendiente").execute()
-            tutorias_pendientes = res_tutorias.data
-            
-            if not tutorias_pendientes:
-                st.success("¡Felicidades! No tienes tutorías pendientes. Eres libre. 🎉")
-            else:
-                for tutoria in tutorias_pendientes:
-                    with st.container():
-                        icono_voz = " 🎙️ (Misión con Voz)" if tutoria.get('modo_voz', False) else ""
+            st.subheader("📚 Tus Tutorías Pendientes")
+            try:
+                res_tutorias = supabase.table("tutorias").select("*").eq("estudiante_id", perfil_actual['id']).eq("estado", "pendiente").execute()
+                tutorias_pendientes = res_tutorias.data
+                
+                if not tutorias_pendientes:
+                    st.success("¡Felicidades! No tienes tutorías pendientes. Eres libre. 🎉")
+                else:
+                    for tutoria in tutorias_pendientes:
+                        with st.container():
+                            icono_voz = " 🎙️ (Misión con Voz)" if tutoria.get('modo_voz', False) else ""
+                            st.markdown(f"""
+                            <div style="background-color: #f3f4f6; padding: 20px; border-radius: 10px; margin-bottom: 10px; border-left: 5px solid #4F46E5;">
+                                <h3 style="margin-top: 0;">📘 {tutoria['asignatura']}{icono_voz}</h3>
+                                <p><b>Misión:</b> {tutoria['mision']}</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            if st.button(f"Entrar a tutoría de {tutoria['asignatura']}", key=tutoria['id'], type="primary"):
+                                st.session_state['tutoria_activa'] = tutoria
+                                st.session_state['mensajes'] = [{"role": "assistant", "content": f"¡Hola! Hoy tenemos la misión: *{tutoria['mision']}*. ¿Empezamos?"}]
+                                st.rerun()
+            except Exception as e:
+                st.error("Error al cargar las tutorías.")
+
+        # ------------------------------------------
+        # PESTAÑA 2: MI RENDIMIENTO (NUEVO)
+        # ------------------------------------------
+        with tab_rendimiento:
+            st.markdown("#### 📈 Resumen de tu Desempeño")
+            try:
+                # Extraemos todas las evaluaciones del estudiante actual
+                res_eval = supabase.table("evaluaciones").select("*").eq("estudiante_id", perfil_actual['id']).order("created_at", desc=True).execute()
+                historial_evaluaciones = res_eval.data
+                
+                if not historial_evaluaciones:
+                    st.info("Aún no tienes calificaciones registradas. ¡Completa tu primera misión para ver tus notas aquí!")
+                else:
+                    # Cálculos rápidos de estadísticas
+                    total_misiones = len(historial_evaluaciones)
+                    promedio = sum(item['nota'] for item in historial_evaluaciones) / total_misiones
+                    
+                    col_prom, col_total = st.columns(2)
+                    with col_prom:
                         st.markdown(f"""
-                        <div style="background-color: #f3f4f6; padding: 20px; border-radius: 10px; margin-bottom: 10px; border-left: 5px solid #4F46E5;">
-                            <h3 style="margin-top: 0;">📘 {tutoria['asignatura']}{icono_voz}</h3>
-                            <p><b>Misión:</b> {tutoria['mision']}</p>
+                        <div style="text-align: center; background-color: #eff6ff; padding: 15px; border-radius: 10px; border: 1px solid #bfdbfe;">
+                            <p style="color: #1e3a8a; font-weight: bold; margin: 0;">Promedio General</p>
+                            <h2 style="color: #2563eb; margin: 0;">{promedio:.1f} <span style="font-size: 1rem; color: #60a5fa;">/100</span></h2>
                         </div>
                         """, unsafe_allow_html=True)
-                        if st.button(f"Entrar a tutoría de {tutoria['asignatura']}", key=tutoria['id'], type="primary"):
-                            st.session_state['tutoria_activa'] = tutoria
-                            st.session_state['mensajes'] = [{"role": "assistant", "content": f"¡Hola! Hoy tenemos la misión: *{tutoria['mision']}*. ¿Empezamos?"}]
-                            st.rerun()
-        except Exception as e:
-            st.error("Error al cargar las tutorías.")
-            
+                    with col_total:
+                        st.markdown(f"""
+                        <div style="text-align: center; background-color: #fef2f2; padding: 15px; border-radius: 10px; border: 1px solid #fecaca;">
+                            <p style="color: #7f1d1d; font-weight: bold; margin: 0;">Misiones Completadas</p>
+                            <h2 style="color: #dc2626; margin: 0;">{total_misiones}</h2>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                    st.divider()
+                    st.markdown("#### 📖 Historial de Actividades")
+                    
+                    # Generamos una lista desplegable por cada evaluación
+                    for evaluacion in historial_evaluaciones:
+                        fecha_corta = evaluacion['created_at'][:10]
+                        nota = evaluacion['nota']
+                        
+                        # Indicador visual semafórico para la nota
+                        color_nota = "🟢" if nota >= 85 else "🟡" if nota >= 60 else "🔴"
+                        
+                        with st.expander(f"{color_nota} {fecha_corta} | {evaluacion['tarea']} - Nota: {nota}/100"):
+                            st.markdown(f"**🗣️ Comentario del Tutor IA:**")
+                            st.info(evaluacion['feedback'])
+            except Exception as e:
+                st.error("No se pudo cargar tu historial de rendimiento en este momento.")
+
+    # ------------------------------------------
+    # PANTALLA DE TUTORÍA ACTIVA
+    # ------------------------------------------
     else:
         tutoria_actual = st.session_state['tutoria_activa']
         modo_voz_activado = tutoria_actual.get('modo_voz', False)
