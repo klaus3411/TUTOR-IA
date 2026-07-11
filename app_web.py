@@ -6,8 +6,10 @@ import re
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from groq import Groq
-from sentence_transformers import Transformer
+from sentence_transformers import SentenceTransformer
+import streamlit.components.v1 as components
 
+# --- LIBRERÍAS OPCIONALES (PDF y VOZ) ---
 try:
     from pypdf import PdfReader
     PDF_DISPONIBLE = True
@@ -124,7 +126,8 @@ def evaluar_actividad(tutoria, historial_mensajes):
     for msg in historial_mensajes:
         mensajes_api.append({"role": msg["role"], "content": msg["content"]})
         
-    mensajes_api.append("role": "user", "content": "Analiza paso a paso y genera la evaluación en formato JSON ahora mismo."})
+    # LÍNEA CORREGIDA AQUÍ (Se añadió la llave de apertura '{')
+    mensajes_api.append({"role": "user", "content": "Analiza paso a paso y genera la evaluación en formato JSON ahora mismo."})
     
     opciones_api = {
         "messages": mensajes_api,
@@ -348,7 +351,6 @@ else:
                 texto_pdf_extraido = ""
                 
                 if archivo_subido is not None:
-                    # Registrar en sesión si se anexaron documentos para la medalla 'investigador'
                     st.session_state['evidencia_adjuntada_en_mision'] = True
                     if archivo_subido.type == "application/pdf":
                         if PDF_DISPONIBLE:
@@ -431,31 +433,25 @@ else:
                             # ==========================================
                             medallas_desbloqueadas_ahora = []
                             
-                            # 1. Medalla obligatoria por completar la misión
                             if otorgar_medalla_logica(perfil_actual['id'], "primera_mision"):
                                 medallas_desbloqueadas_ahora.append("primera_mision")
                                 
-                            # 2. Medalla por buen desempeño (nota >= 85)
                             if datos_evaluacion['nota'] >= 85:
                                 if otorgar_medalla_logica(perfil_actual['id'], "mente_brillante"):
                                     medallas_desbloqueadas_ahora.append("mente_brillante")
                                     
-                            # 3. Medalla por excelencia máxima (nota == 100)
                             if datos_evaluacion['nota'] == 100:
                                 if otorgar_medalla_logica(perfil_actual['id'], "perfeccion"):
                                     medallas_desbloqueadas_ahora.append("perfeccion")
                                     
-                            # 4. Medalla por uso de comandos o notas de voz
                             if st.session_state.get('voz_utilizada_en_mision', False) or modo_voz_activado:
                                 if otorgar_medalla_logica(perfil_actual['id'], "audiofilo"):
                                     medallas_desbloqueadas_ahora.append("audiofilo")
                                     
-                            # 5. Medalla por anexar evidencias documentales externas
                             if st.session_state.get('evidencia_adjuntada_en_mision', False):
                                 if otorgar_medalla_logica(perfil_actual['id'], "investigador"):
                                     medallas_desbloqueadas_ahora.append("investigador")
                             
-                            # Guardar en el estado para celebrar en la pantalla final
                             if medallas_desbloqueadas_ahora:
                                 st.session_state['nuevas_medallas'] = medallas_desbloqueadas_ahora
                             
@@ -470,9 +466,8 @@ else:
             st.markdown(f"<h1 style='text-align: center; color: green;'>{datos['nota']}/100</h1>", unsafe_allow_html=True)
             st.info(f"**🗣️ Comentario:**\n{datos['feedback']}")
             
-            # --- CELEBRACIÓN DE LOGROS ---
             if 'nuevas_medallas' in st.session_state:
-                st.balloons() # Animación gráfica en toda la pantalla
+                st.balloons() 
                 st.markdown("#### 🎉 ¡Has desbloqueado nuevos logros en esta misión!")
                 for clave_m in st.session_state['nuevas_medallas']:
                     meta = MEDALLAS_MAESTRAS[clave_m]
