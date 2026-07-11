@@ -333,13 +333,17 @@ else:
                             resultado_json_str = evaluar_actividad(tutoria_actual, st.session_state.mensajes)
                             datos_evaluacion = json.loads(resultado_json_str)
                             
-                            # 2. Guardamos en el historial de base de datos
-                            supabase.table("evaluaciones").insert({
-                                "estudiante_id": perfil_actual['id'],
-                                "tarea": tutoria_actual['mision'],
-                                "nota": datos_evaluacion['nota'],
-                                "feedback": datos_evaluacion['feedback']
-                            }).execute()
+                        # ... dentro del botón "Entregar Actividad" ...
+                        # Debes concatenar el historial para guardarlo
+                        historial_completo = json.dumps(st.session_state.mensajes) 
+
+                        supabase.table("evaluaciones").insert({
+                            "estudiante_id": perfil_actual['id'],
+                            "tarea": tutoria_actual['mision'],
+                            "nota": datos_evaluacion['nota'],
+                            "feedback": datos_evaluacion['feedback'],
+                            "historial_evidencia": historial_completo # NUEVO: Guardamos toda la conversación/archivos
+                        }).execute()
                             
                             # 3. Marcamos la tutoría como completada
                             supabase.table("tutorias").update({"estado": "completada"}).eq("id", tutoria_actual['id']).execute()
