@@ -1,6 +1,8 @@
 import streamlit as st
 import os
 import pandas as pd
+import json
+import base64
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from sentence_transformers import SentenceTransformer
@@ -93,15 +95,50 @@ with tab_analiticas:
 
                     st.divider()
                     st.subheader("🔍 Auditoría Detallada de Entregas")
-                    st.markdown("Revisa la evidencia de los alumnos o **elimina los registros de prueba**.")
+                    st.markdown("Revisa la evidencia de los alumnos (Chat, PDFs, Imágenes) o elimina los registros de prueba.")
                     
                     for item in res_eval.data:
                         nombre_al = df_estudiantes[df_estudiantes['id'] == item['estudiante_id']]['nombre'].values[0] if not df_estudiantes[df_estudiantes['id'] == item['estudiante_id']].empty else "Alumno Desconocido"
                         
                         with st.expander(f"📚 {nombre_al} | {item['tarea']} | Nota: {item['nota']}/100"):
                             st.write(f"**🗣️ Feedback de la IA:** {item['feedback']}")
-                            st.markdown("**📂 Evidencia del Estudiante (Conversación y Archivos):**")
-                            st.code(item.get('historial_evidencia', 'No hay evidencia guardada.'), language="json")
+                            st.markdown("**📂 Evidencia del Estudiante (Reconstrucción del Chat):**")
+                            
+                            evidencia_str = item.get('historial_evidencia', '')
+                            if evidencia_str:
+                                try:
+                                    # Intentamos leer el JSON y pintarlo como un Chat de Streamlit
+                                    historial_json = json.loads(evidencia_str)
+                                    st.markdown("""<div style='background-color:#f8fafc; padding:15px; border-radius:10px; border: 1px solid #e2e8f0;'>""", unsafe_allow_html=True)
+                                    
+                                    for msg in historial_json:
+                                        avatar_icon = "🧑‍🎓" if msg["role"] == "user" else "🤖"
+                                        with st.chat_message(msg["role"], avatar=avatar_icon):
+                                            if isinstance(msg["content"], list):
+                                                for c in msg["content"]:
+                                                    if c["type"] == "text":
+                                                        st.markdown(c["text"])
+                                                    elif c["type"] == "image_url":
+                                                        try:
+                                                            b64_img = c["image_url"]["url"].split(",")[1]
+                                                            st.image(base64.b64decode(b64_img), width=250)
+                                                        except:
+                                                            st.error("Error cargando la imagen adjunta.")
+                                            else:
+                                                if "[DOCUMENTO PDF ADJUNTO]:" in msg["content"]:
+                                                    partes = msg["content"].split("[DOCUMENTO PDF ADJUNTO]:")
+                                                    st.markdown(partes[0].strip())
+                                                    with st.expander("📄 Ver documento PDF que extrajo el estudiante"):
+                                                        st.text(partes[1].strip())
+                                                else:
+                                                    st.markdown(msg["content"])
+                                    
+                                    st.markdown("</div><br>", unsafe_allow_html=True)
+                                except Exception as e:
+                                    # Si el JSON es muy antiguo o está roto, lo mostramos en crudo como plan B
+                                    st.code(evidencia_str, language="json")
+                            else:
+                                st.info("No hay evidencia guardada para esta actividad.")
                             
                             col_vacia, col_borrar = st.columns([4, 1])
                             with col_borrar:
@@ -204,13 +241,11 @@ with tab_asignaciones:
                 nueva_complejidad = st.radio("Nivel de exigencia:", ["Básico", "Intermedio", "Avanzado"], horizontal=True)
                 nueva_rubrica = st.text_area("Rúbrica de evaluación (Opcional):", placeholder="Ej: Restar puntos si hay mala ortografía.")
                 
-                # --- NUEVO: INTERRUPTOR DE MODO VOZ ---
                 nueva_voz = st.checkbox("🎙️ Activar charla por Voz (La IA hablará en voz alta sus respuestas)")
                 
                 if st.form_submit_button("✅ Crear y Asignar Tutoría", type="primary"):
                     if nueva_tarea:
                         try:
-                            # Añadimos "modo_voz" a la base de datos
                             supabase.table("tutorias").insert({
                                 "estudiante_id": estudiante_seleccionado, 
                                 "asignatura": asignatura, 
@@ -236,8 +271,6 @@ with tab_asignaciones:
                     st.info(f"¡Excelente! **{nombre_estudiante}** está al día y no tiene tutorías pendientes.")
                 else:
                     df_tut = pd.DataFrame(res_tutorias.data)
-                    
-                    # Añadimos un indicador visual si la misión es por voz
                     df_tut['Tipo'] = df_tut.get('modo_voz', pd.Series([False]*len(df_tut))).apply(lambda x: "🎙️ Voz" if x else "✍️ Texto")
                     
                     df_tut = df_tut[['asignatura', 'mision', 'Tipo']]
