@@ -73,11 +73,9 @@ def obtener_perfil(correo):
     return respuesta.data[0] if respuesta.data else None
 
 def evaluar_actividad(tutoria, historial_mensajes):
-    """Motor de evaluación objetivo usando Cadena de Pensamiento para evitar notas repetidas."""
     rubrica = tutoria.get('rubrica') or 'Resta puntos por falta de profundidad, errores técnicos o si la respuesta es muy corta.'
     tarea = tutoria['mision']
     
-    # Detectamos si hay alguna imagen en la conversación para cambiar de modelo
     tiene_imagen = any(isinstance(m['content'], list) for m in historial_mensajes)
     modelo_eval = "llama-3.2-11b-vision-preview" if tiene_imagen else "llama-3.1-8b-instant"
     
@@ -128,9 +126,8 @@ def evaluar_actividad(tutoria, historial_mensajes):
     return contenido
 
 def generar_respuesta(perfil, tutoria, pregunta_actual, historial_mensajes):
-    """Corregido para aceptar los 4 argumentos necesarios."""
-    # Extraer el texto para buscar en los apuntes
-    vector_pregunta = modelo_vectores.encode(str(pregunta_actual)).tolist()
+    texto_busqueda = str(pregunta_actual)
+    vector_pregunta = modelo_vectores.encode(texto_busqueda).tolist()
     resultados = supabase.rpc("match_contenido_curricular", {
         "query_embedding": vector_pregunta, "match_threshold": 0.3, "match_count": 1 
     }).execute()
@@ -145,8 +142,10 @@ def generar_respuesta(perfil, tutoria, pregunta_actual, historial_mensajes):
     COMPLEJIDAD: {tutoria['complejidad']}
     
     REGLAS:
-    1. Si el alumno sube una imagen o PDF, analízalo cuidadosamente.
-    2. Haz UNA SOLA pregunta a la vez. No simules la respuesta del estudiante.
+    1. Escribe ÚNICAMENTE tu próximo turno. NUNCA asumas la respuesta del alumno.
+    2. Haz UNA SOLA pregunta a la vez.
+    3. Si el alumno sube una imagen o [DOCUMENTO PDF ADJUNTO], analízalo detalladamente. 
+    4. IMPORTANTE: Si NO hay archivos adjuntos en la conversación, NO asumas ni inventes que el alumno te envió uno.
     """
 
     tiene_imagen = any(isinstance(m['content'], list) for m in historial_mensajes[-5:])
@@ -250,7 +249,7 @@ else:
                         st.markdown(mensaje["content"])
 
             with st.expander("📎 Adjuntar Imagen o Documento PDF para tu tarea"):
-                archivo_subido = st.file_uploader("Sube una foto o PDF y escribe en el chat para enviarlo.", type=["pdf", "png", "jpg", "jpeg"])
+                archivo_subido = st.file_uploader("Sube una foto o PDF y escribe en el chat para enviarlo.", type=["pdf", "png", "jpg", "jpeg", "webp"])
                 if archivo_subido:
                     st.success(f"Archivo listo. Escribe un mensaje abajo y presiona Enter para enviarlo.")
 
@@ -269,9 +268,10 @@ else:
                                 st.error(f"Error al leer PDF: {e}")
                                 st.session_state.mensajes.append({"role": "user", "content": pregunta})
                         else:
+                            st.error("⚠️ Falta la librería 'pypdf' en el servidor. El archivo no se pudo adjuntar.")
                             st.session_state.mensajes.append({"role": "user", "content": pregunta})
                     
-                    elif archivo_subido.type in ["image/jpeg", "image/png", "image/jpg"]:
+                    elif archivo_subido.type.startswith("image/"):
                         bytes_data = archivo_subido.getvalue()
                         base64_encoded = base64.b64encode(bytes_data).decode('utf-8')
                         contenido_final = [
@@ -279,8 +279,10 @@ else:
                             {"type": "image_url", "image_url": {"url": f"data:{archivo_subido.type};base64,{base64_encoded}"}}
                         ]
                         st.session_state.mensajes.append({"role": "user", "content": contenido_final})
+                    else:
+                        st.session_state.mensajes.append({"role": "user", "content": pregunta})
                 else:
-                    st.session_state.mensajes.append({"role": "user", "content": contenido_final})
+                    st.session_state.mensajes.append({"role": "user", "content": pregunta})
 
                 with st.chat_message("user", avatar="🧑‍🎓"):
                     st.markdown(pregunta)
@@ -307,7 +309,6 @@ else:
                             resultado_json_str = evaluar_actividad(tutoria_actual, st.session_state.mensajes)
                             datos_evaluacion = json.loads(resultado_json_str)
                             
-                            # NUEVO: Guardamos el historial completo para auditoría
                             historial_completo = json.dumps(st.session_state.mensajes)
                             
                             supabase.table("evaluaciones").insert({
