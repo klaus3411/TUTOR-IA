@@ -1,6 +1,8 @@
 import streamlit as st
 import os
 import pandas as pd
+import json
+import base64
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from sentence_transformers import SentenceTransformer
@@ -16,7 +18,6 @@ st.set_page_config(page_title="Tablero del Profesor", page_icon="👨‍🏫", l
 st.title("👨‍🏫 Tablero Analítico del Profesor")
 st.markdown("Visualiza el rendimiento, gestiona el conocimiento de la IA y administra a tus alumnos.")
 
-# Contraseña dura para el prototipo
 PASSWORD_PROFESOR = "Alternancia2024"
 
 contrasena_ingresada = st.text_input("🔑 Contraseña de acceso:", type="password")
@@ -61,7 +62,6 @@ with tab_analiticas:
             res_estudiantes = supabase.table("estudiantes").select("*").execute()
             df_estudiantes = pd.DataFrame(res_estudiantes.data)
 
-            # --- TABLA 1: REGISTRO GENERAL ---
             st.subheader("📋 Lista de Estudiantes Matriculados")
             if not df_estudiantes.empty:
                 columnas_mostrar = ['nombre', 'correo', 'grado', 'nivel_general']
@@ -71,7 +71,6 @@ with tab_analiticas:
             else:
                 st.info("No hay estudiantes matriculados en el sistema.")
 
-            # --- TABLA 2: HISTORIAL DE EVALUACIONES (Resumen) ---
             st.divider()
             st.subheader("📝 Historial de Calificaciones y Entregas")
             st.markdown("Registro general de todas las actividades entregadas y evaluadas por la IA.")
@@ -93,38 +92,66 @@ with tab_analiticas:
                     csv = df_completo_mostrar.to_csv(index=False).encode('utf-8')
                     st.download_button(label="⬇️ Descargar Historial en Excel", data=csv, file_name="historial_calificaciones.csv", mime="text/csv", type="primary")
 
-                    # --- NUEVO: TABLA 3 - AUDITORÍA DETALLADA Y BORRADO ---
+                    # --- VISUALIZADOR DE CHAT Y EVIDENCIAS MEJORADO ---
                     st.divider()
                     st.subheader("🔍 Auditoría Detallada de Entregas")
-                    st.markdown("Revisa la evidencia de los alumnos o **elimina los registros de prueba**.")
+                    st.markdown("Revisa exactamente qué archivos subió el alumno y la conversación visual.")
                     
                     for item in res_eval.data:
                         nombre_al = df_estudiantes[df_estudiantes['id'] == item['estudiante_id']]['nombre'].values[0] if not df_estudiantes[df_estudiantes['id'] == item['estudiante_id']].empty else "Alumno Desconocido"
-                        fecha_corta = item['created_at'][:10]
                         
-                        # Creamos el menú desplegable para cada entrega
                         with st.expander(f"📚 {nombre_al} | {item['tarea']} | Nota: {item['nota']}/100"):
                             st.write(f"**🗣️ Feedback de la IA:** {item['feedback']}")
-                            st.markdown("**📂 Evidencia del Estudiante (Conversación y Archivos):**")
-                            st.code(item.get('historial_evidencia', 'No hay evidencia guardada.'), language="json")
+                            st.markdown("**📂 Conversación y Evidencias:**")
                             
-                            # --- EL BOTÓN DE ELIMINAR INDIVIDUAL ---
+                            evidencia_json = item.get('historial_evidencia', '[]')
+                            try:
+                                mensajes = json.loads(evidencia_json)
+                                for m in mensajes:
+                                    if m['role'] == 'system': continue
+                                    
+                                    role_emoji = "🧑‍🎓 **Alumno:**" if m['role'] == 'user' else "🤖 **Tutor IA:**"
+                                    
+                                    # Si el mensaje contiene una IMAGEN
+                                    if isinstance(m['content'], list):
+                                        for parte in m['content']:
+                                            if parte['type'] == 'text':
+                                                st.markdown(f"{role_emoji} {parte['text']}")
+                                            elif parte['type'] == 'image_url':
+                                                try:
+                                                    b64_data = parte['image_url']['url'].split(",")[1]
+                                                    st.image(base64.b64decode(b64_data), width=400)
+                                                except Exception:
+                                                    st.error("⚠️ Imagen no disponible")
+                                    # Si el mensaje es TEXTO (o un PDF inyectado)
+                                    else:
+                                        texto = m['content']
+                                        if "[DOCUMENTO PDF ADJUNTO]:" in texto:
+                                            partes = texto.split("[DOCUMENTO PDF ADJUNTO]:")
+                                            st.markdown(f"{role_emoji} {partes[0]}")
+                                            with st.expander("📄 Ver texto del PDF Adjunto"):
+                                                st.info(partes[1])
+                                        else:
+                                            st.markdown(f"{role_emoji} {texto}")
+                            except Exception as e:
+                                st.code(evidencia_json, language="json")
+                            
+                            # Botón para eliminar
                             col_vacia, col_borrar = st.columns([4, 1])
                             with col_borrar:
-                                # Usamos el ID único de esta evaluación como clave (key) para el botón
                                 if st.button("🗑️ Eliminar registro", key=f"del_{item['id']}"):
                                     try:
                                         supabase.table("evaluaciones").delete().eq("id", item['id']).execute()
                                         st.success("¡Registro eliminado con éxito!")
-                                        st.rerun() # Refresca la página automáticamente
+                                        st.rerun() 
                                     except Exception as e:
                                         st.error(f"Error al eliminar: {e}")
 
             except Exception as e:
-                st.error(f"⚠️ Error cargando historial de notas. Asegúrate de tener la tabla 'evaluaciones'. Detalle: {e}")
+                st.error(f"⚠️ Error cargando historial de notas. Detalle: {e}")
         
         except Exception as e:
-            st.error(f"Ocurrió un error general cargando las analíticas: {e}")
+            st.error(f"Ocurrió un error general: {e}")
 
 # ------------------------------------------
 # PESTAÑA 2: CARGADOR DE CLASES
