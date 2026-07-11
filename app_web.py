@@ -18,7 +18,6 @@ except ImportError:
 
 try:
     from gtts import gTTS
-    from audio_recorder_streamlit import audio_recorder
     import io
     VOZ_DISPONIBLE = True
 except ImportError:
@@ -276,7 +275,7 @@ else:
                         else:
                             st.markdown(mensaje["content"])
 
-            # ZONA MULTIMEDIA: PDF, IMÁGENES Y AHORA... ¡VOZ!
+            # ZONA MULTIMEDIA: PDF, IMÁGENES Y VOZ NATIVA
             col_doc, col_voz = st.columns([1, 1])
             with col_doc:
                 with st.expander("📎 Adjuntar PDF / Imagen"):
@@ -287,26 +286,21 @@ else:
             with col_voz:
                 with st.expander("🎙️ Enviar nota de voz"):
                     if VOZ_DISPONIBLE:
-                        st.markdown("<p style='font-size:0.8rem; text-align:center;'>Haz clic en el botón para hablar y de nuevo al terminar.</p>", unsafe_allow_html=True)
+                        st.markdown("<p style='font-size:0.8rem; text-align:center;'>Usa la grabadora a continuación para hablar.</p>", unsafe_allow_html=True)
                         
-                        # FIX: Se agregó texto explícito para forzar al botón a dibujarse con un tamaño visible
-                        audio_bytes = audio_recorder(
-                            text="🎙️ Haz clic aquí para grabar",
-                            icon_size="2x", 
-                            icon_name="microphone", 
-                            neutral_color="#6b7280", 
-                            recording_color="#e81c4f", 
-                            key="grabadora_activa"
-                        )
+                        # --- IMPLEMENTACIÓN NATIVA DE STREAMLIT ---
+                        grabacion = st.audio_input("Graba tu mensaje", label_visibility="collapsed")
                         
-                        if audio_bytes and audio_bytes != st.session_state.get('ultimo_audio'):
-                            st.session_state['ultimo_audio'] = audio_bytes
-                            with st.spinner("⏳ Escuchando tu nota de voz..."):
-                                texto_voz = transcribir_audio(audio_bytes)
-                                st.session_state['mensaje_voz_pendiente'] = texto_voz
-                                st.rerun() # Dispara el envío automáticamente
+                        if grabacion is not None:
+                            audio_bytes = grabacion.getvalue()
+                            if audio_bytes != st.session_state.get('ultimo_audio'):
+                                st.session_state['ultimo_audio'] = audio_bytes
+                                with st.spinner("⏳ Escuchando tu nota de voz..."):
+                                    texto_voz = transcribir_audio(audio_bytes)
+                                    st.session_state['mensaje_voz_pendiente'] = texto_voz
+                                    st.rerun() # Dispara el envío automáticamente
                     else:
-                        st.warning("⚠️ El sistema de voz no está instalado en el servidor.")
+                        st.warning("⚠️ La librería gTTS no está instalada.")
 
             # CAPTURAMOS EL INPUT (Por teclado O por voz)
             pregunta_escrita = st.chat_input("Escribe tu mensaje para enviar...")
@@ -346,7 +340,7 @@ else:
                     st.session_state.mensajes.append({"role": "user", "content": contenido_final})
 
                 # Visualización instantánea para el estudiante
-                with st.chat_message("user", avatar="🧑‍🎓"):
+                with st.chat_message("user", avatar="🧑🎓"):
                     st.markdown(pregunta)
                     if archivo_subido is not None:
                         if archivo_subido.type.startswith("image/"):
@@ -364,11 +358,9 @@ else:
                         # Generación de la voz de la IA
                         if VOZ_DISPONIBLE:
                             try:
-                                # Usamos acento neutro (tld='com.mx') para que suene más natural
                                 tts = gTTS(respuesta, lang='es', tld='com.mx')
                                 fp = io.BytesIO()
                                 tts.write_to_fp(fp)
-                                # Reproducción automática (autoplay=True)
                                 st.audio(fp.getvalue(), format="audio/mp3", autoplay=True)
                             except Exception as e:
                                 st.caption("No se pudo generar la voz automática en este momento.")
@@ -385,7 +377,7 @@ else:
             col_vacia, col_boton = st.columns([2, 1])
             with col_boton:
                 if st.button("📤 Entregar Actividad", type="primary", use_container_width=True, disabled=not ha_interactuado):
-                    with st.spinner("🧑‍🏫 Evaluando..."):
+                    with st.spinner("🧑🏫 Evaluando..."):
                         try:
                             resultado_json_str = evaluar_actividad(tutoria_actual, st.session_state.mensajes)
                             datos_evaluacion = json.loads(resultado_json_str)
