@@ -339,8 +339,8 @@ else:
                 else:
                     st.session_state.mensajes.append({"role": "user", "content": contenido_final})
 
-                # Visualización instantánea para el estudiante
-                with st.chat_message("user", avatar="🧑🎓"):
+                # Visualización instantánea para el estudiante (AQUÍ ESTABA EL ERROR DEL EMOJI)
+                with st.chat_message("user", avatar="🧑‍🎓"):
                     st.markdown(pregunta)
                     if archivo_subido is not None:
                         if archivo_subido.type.startswith("image/"):
@@ -377,7 +377,7 @@ else:
             col_vacia, col_boton = st.columns([2, 1])
             with col_boton:
                 if st.button("📤 Entregar Actividad", type="primary", use_container_width=True, disabled=not ha_interactuado):
-                    with st.spinner("🧑🏫 Evaluando..."):
+                    with st.spinner("🧑‍🏫 Evaluando..."):
                         try:
                             resultado_json_str = evaluar_actividad(tutoria_actual, st.session_state.mensajes)
                             datos_evaluacion = json.loads(resultado_json_str)
