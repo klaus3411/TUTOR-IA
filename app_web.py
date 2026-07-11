@@ -80,7 +80,6 @@ def obtener_perfil(correo):
     return respuesta.data[0] if respuesta.data else None
 
 def transcribir_audio(audio_bytes):
-    """Convierte la nota de voz del estudiante a texto usando Whisper de Groq"""
     try:
         respuesta = cliente_groq.audio.transcriptions.create(
             file=("audio.wav", audio_bytes),
@@ -167,6 +166,10 @@ def generar_respuesta(perfil, tutoria, pregunta_actual, historial_mensajes):
     3. Si el alumno sube una imagen o [DOCUMENTO PDF ADJUNTO], analízalo detalladamente. 
     4. IMPORTANTE: Si NO hay archivos adjuntos en la conversación, NO asumas ni inventes que el alumno te envió uno.
     """
+    
+    # --- LA INSTRUCCIÓN SECRETA DE VOZ PARA UNA CHARLA FLUIDA ---
+    if tutoria.get('modo_voz', False):
+        instrucciones += "\n5. MODO VOZ ACTIVADO: Tus respuestas serán leídas en voz alta por un sistema automático. Por lo tanto, sé MUY BREVE (máximo 2 o 3 oraciones cortas), sumamente conversacional, y NUNCA uses listas, viñetas, negritas, ni formatos complejos. Habla fluido como un humano."
 
     tiene_imagen = any(isinstance(m['content'], list) for m in historial_mensajes[-5:])
     modelo_chat = "llama-3.2-11b-vision-preview" if tiene_imagen else "llama-3.1-8b-instant"
@@ -231,9 +234,12 @@ else:
             else:
                 for tutoria in tutorias_pendientes:
                     with st.container():
+                        # Ajuste visual: Mostramos un icono en la tarjeta si la misión es por voz
+                        icono_voz = " 🎙️ (Misión con Voz)" if tutoria.get('modo_voz', False) else ""
+                        
                         st.markdown(f"""
                         <div style="background-color: #f3f4f6; padding: 20px; border-radius: 10px; margin-bottom: 10px; border-left: 5px solid #4F46E5;">
-                            <h3 style="margin-top: 0;">📘 {tutoria['asignatura']}</h3>
+                            <h3 style="margin-top: 0;">📘 {tutoria['asignatura']} {icono_voz}</h3>
                             <p><b>Misión:</b> {tutoria['mision']}</p>
                         </div>
                         """, unsafe_allow_html=True)
@@ -246,6 +252,7 @@ else:
             
     else:
         tutoria_actual = st.session_state['tutoria_activa']
+        modo_voz_activado = tutoria_actual.get('modo_voz', False)
         
         if st.button("⬅️ Volver a mis misiones", use_container_width=False):
             del st.session_state['tutoria_activa']
@@ -253,9 +260,10 @@ else:
             st.rerun()
             
         st.success(f"🎯 **{tutoria_actual['asignatura']}:** {tutoria_actual['mision']}")
+        if modo_voz_activado:
+            st.info("🎙️ **Modo Conversación Activado:** La IA te responderá con voz hablada en esta misión.")
 
         if 'resultado_evaluacion' not in st.session_state:
-            # RENDERIZADO DEL HISTORIAL DE MENSAJES
             for mensaje in st.session_state.mensajes:
                 avatar_icon = "🧑‍🎓" if mensaje["role"] == "user" else URL_LOGO_COLEGIO
                 with st.chat_message(mensaje["role"], avatar=avatar_icon):
@@ -275,7 +283,6 @@ else:
                         else:
                             st.markdown(mensaje["content"])
 
-            # ZONA MULTIMEDIA: PDF, IMÁGENES Y VOZ NATIVA
             col_doc, col_voz = st.columns([1, 1])
             with col_doc:
                 with st.expander("📎 Adjuntar PDF / Imagen"):
@@ -287,8 +294,6 @@ else:
                 with st.expander("🎙️ Enviar nota de voz"):
                     if VOZ_DISPONIBLE:
                         st.markdown("<p style='font-size:0.8rem; text-align:center;'>Usa la grabadora a continuación para hablar.</p>", unsafe_allow_html=True)
-                        
-                        # --- IMPLEMENTACIÓN NATIVA DE STREAMLIT ---
                         grabacion = st.audio_input("Graba tu mensaje", label_visibility="collapsed")
                         
                         if grabacion is not None:
@@ -298,11 +303,10 @@ else:
                                 with st.spinner("⏳ Escuchando tu nota de voz..."):
                                     texto_voz = transcribir_audio(audio_bytes)
                                     st.session_state['mensaje_voz_pendiente'] = texto_voz
-                                    st.rerun() # Dispara el envío automáticamente
+                                    st.rerun() 
                     else:
                         st.warning("⚠️ La librería gTTS no está instalada.")
 
-            # CAPTURAMOS EL INPUT (Por teclado O por voz)
             pregunta_escrita = st.chat_input("Escribe tu mensaje para enviar...")
             pregunta_voz = st.session_state.get('mensaje_voz_pendiente')
             
@@ -315,7 +319,6 @@ else:
                 contenido_final = pregunta
                 texto_pdf_extraido = ""
                 
-                # Procesamiento del archivo justo antes de enviar
                 if archivo_subido is not None:
                     if archivo_subido.type == "application/pdf":
                         if PDF_DISPONIBLE:
@@ -339,7 +342,6 @@ else:
                 else:
                     st.session_state.mensajes.append({"role": "user", "content": contenido_final})
 
-                # Visualización instantánea para el estudiante (AQUÍ ESTABA EL ERROR DEL EMOJI)
                 with st.chat_message("user", avatar="🧑‍🎓"):
                     st.markdown(pregunta)
                     if archivo_subido is not None:
@@ -349,14 +351,13 @@ else:
                             with st.expander("📄 Documento PDF Adjunto (Texto Extraído)"):
                                 st.text(texto_pdf_extraido)
 
-                # RESPUESTA DE LA IA + TEXT TO SPEECH (Voz)
                 with st.chat_message("assistant", avatar=URL_LOGO_COLEGIO):
                     with st.spinner("Pensando..."):
                         respuesta = generar_respuesta(perfil_actual, tutoria_actual, pregunta, st.session_state.mensajes)
                         st.markdown(respuesta)
                         
-                        # Generación de la voz de la IA
-                        if VOZ_DISPONIBLE:
+                        # --- MAGIA CONDICIONAL: Solo habla si el profesor lo activó ---
+                        if VOZ_DISPONIBLE and modo_voz_activado:
                             try:
                                 tts = gTTS(respuesta, lang='es', tld='com.mx')
                                 fp = io.BytesIO()
