@@ -3,3 +3,5 @@ supabase
 groq
 sentence-transformers
 python-dotenv
+pandas
+pypdf
