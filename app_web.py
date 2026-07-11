@@ -6,10 +6,8 @@ import re
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from groq import Groq
-from sentence_transformers import SentenceTransformer
-import streamlit.components.v1 as components
+from sentence_transformers import Transformer
 
-# --- LIBRERÍAS OPCIONALES (PDF y VOZ) ---
 try:
     from pypdf import PdfReader
     PDF_DISPONIBLE = True
@@ -37,27 +35,14 @@ st.markdown("""
 
 URL_LOGO_COLEGIO = "https://scontent.fctg2-1.fna.fbcdn.net/v/t39.30808-6/377432631_785816130218699_8439928282516365142_n.jpg?stp=dst-jpg_tt6&cstp=mx1080x1080&ctp=s1080x1080&_nc_cat=111&ccb=1-7&_nc_sid=6ee11a&_nc_ohc=QkM_KdoM6-8Q7kNvwHZLafy&_nc_oc=Ado8PMT8UfZ5Na3A5PElaVATxsfC2uGumMesGdurEkH6giRzWqSz1reFRnxInqrbSwo&_nc_zt=23&_nc_ht=scontent.fctg2-1.fna&_nc_gid=8GpDrRfgp9dp29bAVZcYkg&_nc_ss=7b289&oh=00_AQA17yO0TLEY20eEhXYhcluOHLBzxi2TEmATg-_PeChiTg&oe=6A544484" 
 
-# ==========================================
-# 1.5 INYECCIÓN PWA (App Instalable)
-# ==========================================
-components.html("""
-<script>
-    try {
-        const parentDoc = window.parent.document;
-        const parentWin = window.parent;
-        const manifest = {
-            "name": "Portal Educativo IA", "short_name": "Portal IA", "theme_color": "#1E3A8A", "background_color": "#F3F4F6",
-            "display": "standalone", "orientation": "portrait", "scope": "/", "start_url": "/",
-            "icons": [{"src": "https://cdn-icons-png.flaticon.com/512/167/167707.png", "sizes": "512x512", "type": "image/png"}]
-        };
-        const blob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
-        const manifestURL = URL.createObjectURL(blob);
-        const oldLink = parentDoc.querySelector('link[rel="manifest"]');
-        if(oldLink) oldLink.remove();
-        parentDoc.head.insertAdjacentHTML('beforeend', `<link rel="manifest" href="${manifestURL}">`);
-    } catch (e) {}
-</script>
-""", height=0)
+# Diccionario Maestro de Medallas Disponibles en el Sistema
+MEDALLAS_MAESTRAS = {
+    "primera_mision": {"titulo": "Primer Paso", "icono": "🥉", "desc": "Completaste tu primera tutoría con éxito."},
+    "mente_brillante": {"titulo": "Mente Brillante", "icono": "🥈", "desc": "Obtuviste una calificación de 85 o más puntos."},
+    "perfeccion": {"titulo": "Perfección", "icono": "🥇", "desc": "Alcanzaste la excelencia absoluta de 100/100."},
+    "audiofilo": {"titulo": "Audiófilo", "icono": "🎙️", "desc": "Completaste una tutoría interactuando por voz."},
+    "investigador": {"titulo": "Investigador", "icono": "📂", "desc": "Sustentaste tus tareas con archivos PDF o imágenes."}
+}
 
 # ==========================================
 # 2. CARGA DE SISTEMAS EN MEMORIA
@@ -73,7 +58,7 @@ def iniciar_sistemas():
 supabase, cliente_groq, modelo_vectores = iniciar_sistemas()
 
 # ==========================================
-# 3. FUNCIONES DEL TUTOR Y EVALUADOR MULTIMODAL
+# 3. FUNCIONES GENERALES DEL SISTEMA
 # ==========================================
 def obtener_perfil(correo):
     respuesta = supabase.table("estudiantes").select("*").eq("correo", correo).execute()
@@ -90,6 +75,20 @@ def transcribir_audio(audio_bytes):
         return respuesta
     except Exception as e:
         return f"[Error al transcribir audio: {e}]"
+
+def otorgar_medalla_logica(estudiante_id, medalla_clave):
+    """Inserta el logro en la base de datos de manera única previniendo duplicados."""
+    try:
+        comprobacion = supabase.table("medallas_ganadas").select("id").eq("estudiante_id", estudiante_id).eq("medalla_clave", medalla_clave).execute()
+        if not comprobacion.data:
+            supabase.table("medallas_ganadas").insert({
+                "estudiante_id": estudiante_id,
+                "medalla_clave": medalla_clave
+            }).execute()
+            return True
+    except:
+        pass
+    return False
 
 def evaluar_actividad(tutoria, historial_mensajes):
     rubrica = tutoria.get('rubrica') or 'Resta puntos por falta de profundidad, errores técnicos o si la respuesta es muy corta.'
@@ -125,7 +124,7 @@ def evaluar_actividad(tutoria, historial_mensajes):
     for msg in historial_mensajes:
         mensajes_api.append({"role": msg["role"], "content": msg["content"]})
         
-    mensajes_api.append({"role": "user", "content": "Analiza paso a paso y genera la evaluación en formato JSON ahora mismo."})
+    mensajes_api.append("role": "user", "content": "Analiza paso a paso y genera la evaluación en formato JSON ahora mismo."})
     
     opciones_api = {
         "messages": mensajes_api,
@@ -193,7 +192,6 @@ if not st.session_state.get('usuario_valido', False):
     with col2:
         st.markdown(f"<div style='text-align: center;'><img src='{URL_LOGO_COLEGIO}' width='150' style='border-radius: 50%;'></div>", unsafe_allow_html=True)
         st.markdown("<h2 style='text-align: center;'>Portal Educativo</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: #4B5563;'>Ingresa para ver tus misiones.</p>", unsafe_allow_html=True)
         
         with st.form("login_form"):
             correo_input = st.text_input("✉️ Correo Institucional:")
@@ -208,7 +206,6 @@ if not st.session_state.get('usuario_valido', False):
                         st.error("Correo no encontrado en el sistema.")
                 else:
                     st.warning("Ingresa tu correo.")
-        st.markdown("<br><p style='text-align: center;'><a href='/tablero_profesor' target='_self' style='color: #9CA3AF; text-decoration: none; font-size: 0.8rem;'>👨‍🏫 Acceso Docente</a></p>", unsafe_allow_html=True)
 
 else:
     perfil_actual = st.session_state['perfil']
@@ -223,6 +220,36 @@ else:
     st.divider()
     
     if 'tutoria_activa' not in st.session_state:
+        # --- VITRINA VISUAL DE MEDALLAS (GAMIFICACIÓN) ---
+        try:
+            res_med_db = supabase.table("medallas_ganadas").select("medalla_clave").eq("estudiante_id", perfil_actual['id']).execute()
+            claves_ganadas = [registro['medalla_clave'] for registro in res_med_db.data] if res_med_db.data else []
+            
+            st.markdown("#### 🏆 Tus Logros Académicos")
+            columnas_medallas = st.columns(len(MEDALLAS_MAESTRAS))
+            
+            for index, (clave, metadatos) in enumerate(MEDALLAS_MAESTRAS.items()):
+                with columnas_medallas[index]:
+                    if clave in claves_ganadas:
+                        st.markdown(f"""
+                        <div style="text-align: center; background-color: #f0fdf4; border: 2px solid #22c55e; padding: 12px; border-radius: 12px; min-height: 140px;">
+                            <span style="font-size: 2.2rem;">{metadatos['icono']}</span><br>
+                            <b style="font-size: 0.8rem; color: #166534; display: block; margin-top: 5px;">{metadatos['titulo']}</b>
+                            <p style="font-size: 0.65rem; color: #15803d; margin: 5px 0 0 0; line-height: 1.1;">{metadatos['desc']}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"""
+                        <div style="text-align: center; background-color: #f8fafc; border: 2px dashed #cbd5e1; padding: 12px; border-radius: 12px; min-height: 140px; opacity: 0.45;">
+                            <span style="font-size: 2.2rem; filter: grayscale(100%);">🔒</span><br>
+                            <b style="font-size: 0.8rem; color: #64748b; display: block; margin-top: 5px;">Bloqueado</b>
+                            <p style="font-size: 0.65rem; color: #94a3b8; margin: 5px 0 0 0; line-height: 1.1;">{metadatos['desc']}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+            st.write("")
+        except:
+            pass
+
         st.subheader("📚 Tus Tutorías Pendientes")
         try:
             res_tutorias = supabase.table("tutorias").select("*").eq("estudiante_id", perfil_actual['id']).eq("estado", "pendiente").execute()
@@ -236,7 +263,7 @@ else:
                         icono_voz = " 🎙️ (Misión con Voz)" if tutoria.get('modo_voz', False) else ""
                         st.markdown(f"""
                         <div style="background-color: #f3f4f6; padding: 20px; border-radius: 10px; margin-bottom: 10px; border-left: 5px solid #4F46E5;">
-                            <h3 style="margin-top: 0;">📘 {tutoria['asignatura']} {icono_voz}</h3>
+                            <h3 style="margin-top: 0;">📘 {tutoria['asignatura']}{icono_voz}</h3>
                             <p><b>Misión:</b> {tutoria['mision']}</p>
                         </div>
                         """, unsafe_allow_html=True)
@@ -321,6 +348,8 @@ else:
                 texto_pdf_extraido = ""
                 
                 if archivo_subido is not None:
+                    # Registrar en sesión si se anexaron documentos para la medalla 'investigador'
+                    st.session_state['evidencia_adjuntada_en_mision'] = True
                     if archivo_subido.type == "application/pdf":
                         if PDF_DISPONIBLE:
                             try:
@@ -342,14 +371,8 @@ else:
                 else:
                     st.session_state.mensajes.append({"role": "user", "content": contenido_final})
 
-                with st.chat_message("user", avatar="🧑‍🎓"):
-                    st.markdown(pregunta)
-                    if archivo_subido is not None:
-                        if archivo_subido.type.startswith("image/"):
-                            st.image(archivo_subido, width=350)
-                        elif archivo_subido.type == "application/pdf" and texto_pdf_extraido:
-                            with st.expander("📄 Documento PDF Adjunto (Texto Extraído)"):
-                                st.text(texto_pdf_extraido)
+                if pregunta_voz:
+                    st.session_state['voz_utilizada_en_mision'] = True
 
                 with st.chat_message("assistant", avatar=URL_LOGO_COLEGIO):
                     with st.spinner("Pensando..."):
@@ -362,7 +385,7 @@ else:
                                 fp = io.BytesIO()
                                 tts.write_to_fp(fp)
                                 audio_generado = fp.getvalue()
-                            except Exception as e:
+                            except:
                                 pass 
                 
                 st.session_state.mensajes.append({
@@ -391,7 +414,6 @@ else:
                                 mensaje_copia = {"role": m["role"], "content": m["content"]}
                                 historial_limpio_para_db.append(mensaje_copia)
                                 
-                            # SOLUCIÓN: force ascii=False e indent=4 para mantener los acentos y formatearlo bonito.
                             historial_completo = json.dumps(historial_limpio_para_db, ensure_ascii=False, indent=4)
                             
                             supabase.table("evaluaciones").insert({
@@ -403,6 +425,40 @@ else:
                             }).execute()
                             
                             supabase.table("tutorias").update({"estado": "completada"}).eq("id", tutoria_actual['id']).execute()
+                            
+                            # ==========================================
+                            # NÚCLEO DE EVALUACIÓN DE LOGROS (GAMIFICACIÓN)
+                            # ==========================================
+                            medallas_desbloqueadas_ahora = []
+                            
+                            # 1. Medalla obligatoria por completar la misión
+                            if otorgar_medalla_logica(perfil_actual['id'], "primera_mision"):
+                                medallas_desbloqueadas_ahora.append("primera_mision")
+                                
+                            # 2. Medalla por buen desempeño (nota >= 85)
+                            if datos_evaluacion['nota'] >= 85:
+                                if otorgar_medalla_logica(perfil_actual['id'], "mente_brillante"):
+                                    medallas_desbloqueadas_ahora.append("mente_brillante")
+                                    
+                            # 3. Medalla por excelencia máxima (nota == 100)
+                            if datos_evaluacion['nota'] == 100:
+                                if otorgar_medalla_logica(perfil_actual['id'], "perfeccion"):
+                                    medallas_desbloqueadas_ahora.append("perfeccion")
+                                    
+                            # 4. Medalla por uso de comandos o notas de voz
+                            if st.session_state.get('voz_utilizada_en_mision', False) or modo_voz_activado:
+                                if otorgar_medalla_logica(perfil_actual['id'], "audiofilo"):
+                                    medallas_desbloqueadas_ahora.append("audiofilo")
+                                    
+                            # 5. Medalla por anexar evidencias documentales externas
+                            if st.session_state.get('evidencia_adjuntada_en_mision', False):
+                                if otorgar_medalla_logica(perfil_actual['id'], "investigador"):
+                                    medallas_desbloqueadas_ahora.append("investigador")
+                            
+                            # Guardar en el estado para celebrar en la pantalla final
+                            if medallas_desbloqueadas_ahora:
+                                st.session_state['nuevas_medallas'] = medallas_desbloqueadas_ahora
+                            
                             st.session_state['resultado_evaluacion'] = datos_evaluacion
                             st.rerun()
                         except Exception as e:
@@ -413,7 +469,19 @@ else:
             st.markdown("### 📊 Actividad Completada")
             st.markdown(f"<h1 style='text-align: center; color: green;'>{datos['nota']}/100</h1>", unsafe_allow_html=True)
             st.info(f"**🗣️ Comentario:**\n{datos['feedback']}")
+            
+            # --- CELEBRACIÓN DE LOGROS ---
+            if 'nuevas_medallas' in st.session_state:
+                st.balloons() # Animación gráfica en toda la pantalla
+                st.markdown("#### 🎉 ¡Has desbloqueado nuevos logros en esta misión!")
+                for clave_m in st.session_state['nuevas_medallas']:
+                    meta = MEDALLAS_MAESTRAS[clave_m]
+                    st.success(f"**{meta['icono']} {meta['titulo']}:** {meta['desc']}")
+            
             if st.button("Regresar", type="primary"):
                 del st.session_state['tutoria_activa']
                 del st.session_state['resultado_evaluacion']
+                if 'nuevas_medallas' in st.session_state: del st.session_state['nuevas_medallas']
+                if 'voz_utilizada_en_mision' in st.session_state: del st.session_state['voz_utilizada_en_mision']
+                if 'evidencia_adjuntada_en_mision' in st.session_state: del st.session_state['evidencia_adjuntada_en_mision']
                 st.rerun()
