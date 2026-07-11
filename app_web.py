@@ -9,12 +9,20 @@ from groq import Groq
 from sentence_transformers import SentenceTransformer
 import streamlit.components.v1 as components
 
-# Intentamos importar pypdf, si no está, avisaremos en la interfaz
+# --- LIBRERÍAS OPCIONALES (PDF y VOZ) ---
 try:
     from pypdf import PdfReader
     PDF_DISPONIBLE = True
 except ImportError:
     PDF_DISPONIBLE = False
+
+try:
+    from gtts import gTTS
+    from audio_recorder_streamlit import audio_recorder
+    import io
+    VOZ_DISPONIBLE = True
+except ImportError:
+    VOZ_DISPONIBLE = False
 
 # ==========================================
 # 1. CONFIGURACIÓN DE LA PÁGINA WEB
@@ -71,6 +79,19 @@ supabase, cliente_groq, modelo_vectores = iniciar_sistemas()
 def obtener_perfil(correo):
     respuesta = supabase.table("estudiantes").select("*").eq("correo", correo).execute()
     return respuesta.data[0] if respuesta.data else None
+
+def transcribir_audio(audio_bytes):
+    """Convierte la nota de voz del estudiante a texto usando Whisper de Groq"""
+    try:
+        respuesta = cliente_groq.audio.transcriptions.create(
+            file=("audio.wav", audio_bytes),
+            model="whisper-large-v3-turbo",
+            response_format="text",
+            language="es"
+        )
+        return respuesta
+    except Exception as e:
+        return f"[Error al transcribir audio: {e}]"
 
 def evaluar_actividad(tutoria, historial_mensajes):
     rubrica = tutoria.get('rubrica') or 'Resta puntos por falta de profundidad, errores técnicos o si la respuesta es muy corta.'
@@ -240,7 +261,6 @@ else:
                 avatar_icon = "🧑‍🎓" if mensaje["role"] == "user" else URL_LOGO_COLEGIO
                 with st.chat_message(mensaje["role"], avatar=avatar_icon):
                     if isinstance(mensaje["content"], list):
-                        # Dibuja las imágenes subidas en el historial
                         for item in mensaje["content"]:
                             if item["type"] == "text":
                                 st.markdown(item["text"])
@@ -248,21 +268,47 @@ else:
                                 b64_img = item["image_url"]["url"].split(",")[1]
                                 st.image(base64.b64decode(b64_img), width=350)
                     else:
-                        # Dibuja el texto normal y los PDFs subidos en el historial
                         if "[DOCUMENTO PDF ADJUNTO]:" in mensaje["content"]:
                             partes = mensaje["content"].split("[DOCUMENTO PDF ADJUNTO]:")
                             st.markdown(partes[0].strip())
                             with st.expander("📄 Documento PDF Adjunto (Texto Extraído)"):
-                                st.text(partes[1].strip()) # st.text evita que símbolos extraños del PDF rompan la página
+                                st.text(partes[1].strip())
                         else:
                             st.markdown(mensaje["content"])
 
-            with st.expander("📎 Adjuntar Imagen o Documento PDF para tu tarea"):
-                archivo_subido = st.file_uploader("Sube una foto o PDF y escribe en el chat para enviarlo.", type=["pdf", "png", "jpg", "jpeg", "webp"])
-                if archivo_subido:
-                    st.success(f"Archivo listo. Escribe un mensaje abajo y presiona Enter para enviarlo.")
+            # ZONA MULTIMEDIA: PDF, IMÁGENES Y AHORA... ¡VOZ!
+            col_doc, col_voz = st.columns([1, 1])
+            with col_doc:
+                with st.expander("📎 Adjuntar PDF / Imagen"):
+                    archivo_subido = st.file_uploader("Sube y escribe abajo para enviar.", type=["pdf", "png", "jpg", "jpeg", "webp"], label_visibility="collapsed")
+                    if archivo_subido:
+                        st.success("Archivo listo.")
+            
+            with col_voz:
+                with st.expander("🎙️ Enviar nota de voz"):
+                    if VOZ_DISPONIBLE:
+                        st.markdown("<p style='font-size:0.8rem; text-align:center;'>Haz clic en el micrófono para hablar y haz clic de nuevo al terminar.</p>", unsafe_allow_html=True)
+                        audio_bytes = audio_recorder(text="", icon_size="2x", icon_name="microphone", neutral_color="#6b7280", recording_color="#e81c4f", key="grabadora")
+                        
+                        if audio_bytes and audio_bytes != st.session_state.get('ultimo_audio'):
+                            st.session_state['ultimo_audio'] = audio_bytes
+                            with st.spinner("⏳ Escuchando tu nota de voz..."):
+                                texto_voz = transcribir_audio(audio_bytes)
+                                st.session_state['mensaje_voz_pendiente'] = texto_voz
+                                st.rerun() # Dispara el envío automáticamente
+                    else:
+                        st.warning("⚠️ El sistema de voz no está instalado en el servidor.")
 
-            if pregunta := st.chat_input("Escribe tu mensaje para enviar..."):
+            # CAPTURAMOS EL INPUT (Por teclado O por voz)
+            pregunta_escrita = st.chat_input("Escribe tu mensaje para enviar...")
+            pregunta_voz = st.session_state.get('mensaje_voz_pendiente')
+            
+            pregunta = pregunta_escrita or pregunta_voz
+
+            if pregunta:
+                if pregunta_voz:
+                    del st.session_state['mensaje_voz_pendiente']
+
                 contenido_final = pregunta
                 texto_pdf_extraido = ""
                 
@@ -278,9 +324,6 @@ else:
                             except Exception as e:
                                 st.error(f"Error al leer PDF: {e}")
                                 st.session_state.mensajes.append({"role": "user", "content": pregunta})
-                        else:
-                            st.error("⚠️ Falta la librería 'pypdf' en el servidor. El archivo no se pudo adjuntar.")
-                            st.session_state.mensajes.append({"role": "user", "content": pregunta})
                     
                     elif archivo_subido.type.startswith("image/"):
                         bytes_data = archivo_subido.getvalue()
@@ -290,10 +333,8 @@ else:
                             {"type": "image_url", "image_url": {"url": f"data:{archivo_subido.type};base64,{base64_encoded}"}}
                         ]
                         st.session_state.mensajes.append({"role": "user", "content": contenido_final})
-                    else:
-                        st.session_state.mensajes.append({"role": "user", "content": pregunta})
                 else:
-                    st.session_state.mensajes.append({"role": "user", "content": pregunta})
+                    st.session_state.mensajes.append({"role": "user", "content": contenido_final})
 
                 # Visualización instantánea para el estudiante
                 with st.chat_message("user", avatar="🧑‍🎓"):
@@ -305,10 +346,23 @@ else:
                             with st.expander("📄 Documento PDF Adjunto (Texto Extraído)"):
                                 st.text(texto_pdf_extraido)
 
+                # RESPUESTA DE LA IA + TEXT TO SPEECH (Voz)
                 with st.chat_message("assistant", avatar=URL_LOGO_COLEGIO):
-                    with st.spinner("Escribiendo..."):
+                    with st.spinner("Pensando..."):
                         respuesta = generar_respuesta(perfil_actual, tutoria_actual, pregunta, st.session_state.mensajes)
                         st.markdown(respuesta)
+                        
+                        # Generación de la voz de la IA
+                        if VOZ_DISPONIBLE:
+                            try:
+                                # Usamos acento neutro (tld='com.mx') para que suene más natural
+                                tts = gTTS(respuesta, lang='es', tld='com.mx')
+                                fp = io.BytesIO()
+                                tts.write_to_fp(fp)
+                                # Reproducción automática (autoplay=True)
+                                st.audio(fp.getvalue(), format="audio/mp3", autoplay=True)
+                            except Exception as e:
+                                st.caption("No se pudo generar la voz automática en este momento.")
                 
                 st.session_state.mensajes.append({"role": "assistant", "content": respuesta})
                 st.rerun() 
