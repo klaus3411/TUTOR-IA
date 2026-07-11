@@ -287,8 +287,17 @@ else:
             with col_voz:
                 with st.expander("🎙️ Enviar nota de voz"):
                     if VOZ_DISPONIBLE:
-                        st.markdown("<p style='font-size:0.8rem; text-align:center;'>Haz clic en el micrófono para hablar y haz clic de nuevo al terminar.</p>", unsafe_allow_html=True)
-                        audio_bytes = audio_recorder(text="", icon_size="2x", icon_name="microphone", neutral_color="#6b7280", recording_color="#e81c4f", key="grabadora")
+                        st.markdown("<p style='font-size:0.8rem; text-align:center;'>Haz clic en el botón para hablar y de nuevo al terminar.</p>", unsafe_allow_html=True)
+                        
+                        # FIX: Se agregó texto explícito para forzar al botón a dibujarse con un tamaño visible
+                        audio_bytes = audio_recorder(
+                            text="🎙️ Haz clic aquí para grabar",
+                            icon_size="2x", 
+                            icon_name="microphone", 
+                            neutral_color="#6b7280", 
+                            recording_color="#e81c4f", 
+                            key="grabadora_activa"
+                        )
                         
                         if audio_bytes and audio_bytes != st.session_state.get('ultimo_audio'):
                             st.session_state['ultimo_audio'] = audio_bytes
