@@ -12,15 +12,10 @@ from sentence_transformers import SentenceTransformer
 # ==========================================
 st.set_page_config(page_title="Tablero del Profesor", page_icon="👨‍🏫", layout="wide")
 
-# ==========================================
-# 2. SISTEMA DE SEGURIDAD (Solo Profesores)
-# ==========================================
 st.title("👨‍🏫 Tablero Analítico del Profesor")
 st.markdown("Visualiza el rendimiento, gestiona el conocimiento de la IA y administra a tus alumnos.")
 
-# Contraseña dura para el prototipo
 PASSWORD_PROFESOR = "Alternancia2024"
-
 contrasena_ingresada = st.text_input("🔑 Contraseña de acceso:", type="password")
 
 if contrasena_ingresada != PASSWORD_PROFESOR:
@@ -44,18 +39,26 @@ def cargar_modelo_vectores():
 
 supabase = iniciar_conexion()
 
+MAPA_ICONOS_MEDALLAS = {
+    "primera_mision": "🥉",
+    "mente_brillante": "🥈",
+    "perfeccion": "🥇",
+    "audiofilo": "🎙️",
+    "investigador": "📂"
+}
+
 # ==========================================
 # 4. INTERFAZ DE PESTAÑAS (TABS)
 # ==========================================
 tab_analiticas, tab_cargador, tab_registro, tab_asignaciones = st.tabs([
-    "📊 Analíticas", 
+    "📊 Analíticas y Logros", 
     "🧠 Enseñar a la IA",
     "🧑‍🎓 Matricular",
     "🎯 Asignar Tutorías"
 ])
 
 # ------------------------------------------
-# PESTAÑA 1: ANALÍTICAS
+# PESTAÑA 1: ANALÍTICAS Y LOGROS
 # ------------------------------------------
 with tab_analiticas:
     with st.spinner("Extrayendo datos de aprendizaje..."):
@@ -63,18 +66,35 @@ with tab_analiticas:
             res_estudiantes = supabase.table("estudiantes").select("*").execute()
             df_estudiantes = pd.DataFrame(res_estudiantes.data)
 
-            st.subheader("📋 Lista de Estudiantes Matriculados")
+            st.subheader("📋 Lista de Estudiantes y Cuadro de Honor")
             if not df_estudiantes.empty:
-                columnas_mostrar = ['nombre', 'correo', 'grado', 'nivel_general']
-                df_registro = df_estudiantes[columnas_mostrar].copy()
-                df_registro.columns = ['Nombre del Alumno', 'Correo', 'Grado', 'Nivel Base']
+                # Extraer todas las medallas en una sola consulta para optimizar rendimiento
+                res_todas_medallas = supabase.table("medallas_ganadas").select("estudiante_id, medalla_clave").execute()
+                df_meds = pd.DataFrame(res_todas_medallas.data) if res_todas_medallas.data else pd.DataFrame()
+                
+                # Consolidar medallas por cada alumno
+                medallas_por_alumno = {}
+                if not df_meds.empty:
+                    for _, fila in df_meds.iterrows():
+                        est_id = fila['estudiante_id']
+                        icono = MAPA_ICONOS_MEDALLAS.get(fila['medalla_clave'], "🏅")
+                        if est_id not in medallas_por_alumno:
+                            medallas_por_alumno[est_id] = []
+                        medallas_por_alumno[est_id].append(icono)
+                
+                # Mapear los iconos consolidados a la tabla
+                df_estudiantes['Insignias Obtenidas'] = df_estudiantes['id'].apply(
+                    lambda x: " ".join(medallas_por_alumno[x]) if x in medallas_por_alumno else "Ninguna"
+                )
+                
+                df_registro = df_estudiantes[['nombre', 'correo', 'grado', 'Insignias Obtenidas']].copy()
+                df_registro.columns = ['Nombre del Alumno', 'Correo', 'Grado', 'Medallas Desbloqueadas']
                 st.dataframe(df_registro, use_container_width=True)
             else:
                 st.info("No hay estudiantes matriculados en el sistema.")
 
             st.divider()
             st.subheader("📝 Historial de Calificaciones y Entregas")
-            st.markdown("Registro general de todas las actividades entregadas y evaluadas por la IA.")
             
             try:
                 res_eval = supabase.table("evaluaciones").select("*").order("created_at", desc=True).execute()
@@ -95,7 +115,6 @@ with tab_analiticas:
 
                     st.divider()
                     st.subheader("🔍 Auditoría Detallada de Entregas")
-                    st.markdown("Revisa la evidencia de los alumnos (Chat, PDFs, Imágenes) o elimina los registros de prueba.")
                     
                     for item in res_eval.data:
                         nombre_al = df_estudiantes[df_estudiantes['id'] == item['estudiante_id']]['nombre'].values[0] if not df_estudiantes[df_estudiantes['id'] == item['estudiante_id']].empty else "Alumno Desconocido"
@@ -107,7 +126,6 @@ with tab_analiticas:
                             evidencia_str = item.get('historial_evidencia', '')
                             if evidencia_str:
                                 try:
-                                    # Intentamos leer el JSON y pintarlo como un Chat de Streamlit
                                     historial_json = json.loads(evidencia_str)
                                     st.markdown("""<div style='background-color:#f8fafc; padding:15px; border-radius:10px; border: 1px solid #e2e8f0;'>""", unsafe_allow_html=True)
                                     
@@ -123,38 +141,33 @@ with tab_analiticas:
                                                             b64_img = c["image_url"]["url"].split(",")[1]
                                                             st.image(base64.b64decode(b64_img), width=250)
                                                         except:
-                                                            st.error("Error cargando la imagen adjunta.")
+                                                            st.error("Error cargando la imagen.")
                                             else:
                                                 if "[DOCUMENTO PDF ADJUNTO]:" in msg["content"]:
                                                     partes = msg["content"].split("[DOCUMENTO PDF ADJUNTO]:")
                                                     st.markdown(partes[0].strip())
-                                                    with st.expander("📄 Ver documento PDF que extrajo el estudiante"):
+                                                    with st.expander("📄 Ver documento PDF"):
                                                         st.text(partes[1].strip())
                                                 else:
                                                     st.markdown(msg["content"])
-                                    
                                     st.markdown("</div><br>", unsafe_allow_html=True)
-                                except Exception as e:
-                                    # Si el JSON es muy antiguo o está roto, lo mostramos en crudo como plan B
+                                except:
                                     st.code(evidencia_str, language="json")
-                            else:
-                                st.info("No hay evidencia guardada para esta actividad.")
                             
                             col_vacia, col_borrar = st.columns([4, 1])
                             with col_borrar:
                                 if st.button("🗑️ Eliminar registro", key=f"del_{item['id']}"):
                                     try:
                                         supabase.table("evaluaciones").delete().eq("id", item['id']).execute()
-                                        st.success("¡Registro eliminado con éxito!")
+                                        st.success("¡Registro eliminado!")
                                         st.rerun() 
                                     except Exception as e:
-                                        st.error(f"Error al eliminar: {e}")
+                                        st.error(f"Error: {e}")
 
             except Exception as e:
-                st.error(f"⚠️ Error cargando historial de notas. Detalle: {e}")
-        
+                st.error(f"⚠️ Error cargando analíticas: {e}")
         except Exception as e:
-            st.error(f"Ocurrió un error general cargando las analíticas: {e}")
+            st.error(f"Ocurrió un error general: {e}")
 
 # ------------------------------------------
 # PESTAÑA 2: CARGADOR DE CLASES
@@ -258,7 +271,7 @@ with tab_asignaciones:
                             st.success(f"Tutoría de {asignatura} creada con éxito.")
                             st.rerun() 
                         except Exception as e:
-                            st.error(f"Error al guardar. Asegúrate de haber creado la columna 'modo_voz' (boolean) en Supabase. Detalle: {e}")
+                            st.error(f"Error al guardar. Detalle: {e}")
                     else:
                         st.error("Debes escribir una tarea.")
         
