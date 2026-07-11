@@ -81,7 +81,6 @@ def evaluar_actividad(tutoria, historial_mensajes):
     tiene_imagen = any(isinstance(m['content'], list) for m in historial_mensajes)
     modelo_eval = "llama-3.2-11b-vision-preview" if tiene_imagen else "llama-3.1-8b-instant"
     
-    # ! NUEVO: Instrucciones estrictas y matemáticas para la IA
     prompt_sistema = f"""
     Eres un profesor EVALUADOR ESTRICTO Y ALTAMENTE OBJETIVO de {tutoria['asignatura']}.
     Tu tarea es CALIFICAR la interacción del estudiante basándote ÚNICAMENTE en la evidencia del chat y archivos enviados.
@@ -114,7 +113,7 @@ def evaluar_actividad(tutoria, historial_mensajes):
     opciones_api = {
         "messages": mensajes_api,
         "model": modelo_eval,
-        "temperature": 0.1 # Temperatura baja para que sea analítico y no creativo
+        "temperature": 0.1 
     }
     
     if not tiene_imagen:
@@ -129,13 +128,9 @@ def evaluar_actividad(tutoria, historial_mensajes):
     return contenido
 
 def generar_respuesta(perfil, tutoria, pregunta_actual, historial_mensajes):
-    """Genera respuesta adaptativa manejando formatos complejos de imagen/PDF."""
-    
-    # 1. Limpieza: Extraer texto plano para la búsqueda vectorial (RAG)
-    # Si es una lista compleja (imagen/pdf), sacamos el texto del primer elemento
-    texto_busqueda = str(pregunta_actual)
-    
-    vector_pregunta = modelo_vectores.encode(texto_busqueda).tolist()
+    """Corregido para aceptar los 4 argumentos necesarios."""
+    # Extraer el texto para buscar en los apuntes
+    vector_pregunta = modelo_vectores.encode(str(pregunta_actual)).tolist()
     resultados = supabase.rpc("match_contenido_curricular", {
         "query_embedding": vector_pregunta, "match_threshold": 0.3, "match_count": 1 
     }).execute()
@@ -150,21 +145,16 @@ def generar_respuesta(perfil, tutoria, pregunta_actual, historial_mensajes):
     COMPLEJIDAD: {tutoria['complejidad']}
     
     REGLAS:
-    1. Si el alumno sube una imagen o PDF, analízalo.
-    2. Haz UNA SOLA pregunta a la vez.
+    1. Si el alumno sube una imagen o PDF, analízalo cuidadosamente.
+    2. Haz UNA SOLA pregunta a la vez. No simules la respuesta del estudiante.
     """
 
-    # 2. Preparar mensajes para Groq
-    mensajes_api = [{"role": "system", "content": f"{instrucciones}\n\nINFO OFICIAL:\n{texto_oficial}"}]
-    
-    # Añadimos el historial asegurando compatibilidad
-    for msg in historial_mensajes[-8:]:
-        # Si es contenido complejo, lo pasamos tal cual para visión, si es texto, igual.
-        mensajes_api.append({"role": msg["role"], "content": msg["content"]})
+    tiene_imagen = any(isinstance(m['content'], list) for m in historial_mensajes[-5:])
+    modelo_chat = "llama-3.2-11b-vision-preview" if tiene_imagen else "llama-3.1-8b-instant"
 
-    # Detectamos modelo según si hay archivos en el historial reciente
-    tiene_archivos = any(isinstance(m['content'], list) for m in historial_mensajes[-5:])
-    modelo_chat = "llama-3.2-11b-vision-preview" if tiene_archivos else "llama-3.1-8b-instant"
+    mensajes_api = [{"role": "system", "content": f"{instrucciones}\n\nINFO OFICIAL:\n{texto_oficial}"}]
+    for msg in historial_mensajes[-8:]: 
+        mensajes_api.append({"role": msg["role"], "content": msg["content"]})
 
     respuesta_ia = cliente_groq.chat.completions.create(
         messages=mensajes_api,
@@ -172,6 +162,7 @@ def generar_respuesta(perfil, tutoria, pregunta_actual, historial_mensajes):
         temperature=0.7
     )
     return respuesta_ia.choices[0].message.content
+
 # ==========================================
 # 4. INTERFAZ GRÁFICA (UI)
 # ==========================================
@@ -210,7 +201,6 @@ else:
             
     st.divider()
     
-    # PANTALLA: SELECCIÓN DE MISIONES
     if 'tutoria_activa' not in st.session_state:
         st.subheader("📚 Tus Tutorías Pendientes")
         try:
@@ -235,7 +225,6 @@ else:
         except Exception as e:
             st.error("Error al cargar las tutorías.")
             
-    # PANTALLA: CHAT DE LA TUTORÍA Y CARGA DE ARCHIVOS
     else:
         tutoria_actual = st.session_state['tutoria_activa']
         
@@ -247,8 +236,6 @@ else:
         st.success(f"🎯 **{tutoria_actual['asignatura']}:** {tutoria_actual['mision']}")
 
         if 'resultado_evaluacion' not in st.session_state:
-            
-            # --- RENDERIZADO DEL CHAT VISUAL (Soporta Texto e Imágenes) ---
             for mensaje in st.session_state.mensajes:
                 avatar_icon = "🧑‍🎓" if mensaje["role"] == "user" else URL_LOGO_COLEGIO
                 with st.chat_message(mensaje["role"], avatar=avatar_icon):
@@ -262,30 +249,26 @@ else:
                     else:
                         st.markdown(mensaje["content"])
 
-            # --- ZONA DE ADJUNTAR ARCHIVOS ---
             with st.expander("📎 Adjuntar Imagen o Documento PDF para tu tarea"):
-                archivo_subido = st.file_uploader("Sube una foto de tu cuaderno o un archivo PDF, y luego escribe en el chat para enviarlo.", type=["pdf", "png", "jpg", "jpeg"])
+                archivo_subido = st.file_uploader("Sube una foto o PDF y escribe en el chat para enviarlo.", type=["pdf", "png", "jpg", "jpeg"])
                 if archivo_subido:
                     st.success(f"Archivo listo. Escribe un mensaje abajo y presiona Enter para enviarlo.")
 
-            # --- ENTRADA DEL CHAT ---
             if pregunta := st.chat_input("Escribe tu mensaje para enviar..."):
                 contenido_final = pregunta
                 
-                # Procesar si hay un archivo adjunto
                 if archivo_subido is not None:
                     if archivo_subido.type == "application/pdf":
                         if PDF_DISPONIBLE:
                             try:
                                 lector = PdfReader(archivo_subido)
                                 texto_pdf = "\n".join([pagina.extract_text() for pagina in lector.pages])
-                                contenido_final = f"{pregunta}\n\n[DOCUMENTO PDF ADJUNTO POR ESTUDIANTE]:\n{texto_pdf}"
+                                contenido_final = f"{pregunta}\n\n[DOCUMENTO PDF ADJUNTO]:\n{texto_pdf}"
                                 st.session_state.mensajes.append({"role": "user", "content": contenido_final})
                             except Exception as e:
                                 st.error(f"Error al leer PDF: {e}")
                                 st.session_state.mensajes.append({"role": "user", "content": pregunta})
                         else:
-                            st.error("Lector PDF no disponible. El profesor debe ejecutar: pip install pypdf")
                             st.session_state.mensajes.append({"role": "user", "content": pregunta})
                     
                     elif archivo_subido.type in ["image/jpeg", "image/png", "image/jpg"]:
@@ -299,13 +282,8 @@ else:
                 else:
                     st.session_state.mensajes.append({"role": "user", "content": contenido_final})
 
-                # --- GENERAR RESPUESTA DE LA IA ---
                 with st.chat_message("user", avatar="🧑‍🎓"):
                     st.markdown(pregunta)
-                    if archivo_subido and archivo_subido.type.startswith("image"):
-                        st.caption("📷 Imagen adjuntada")
-                    elif archivo_subido and archivo_subido.type == "application/pdf":
-                        st.caption("📄 PDF adjuntado")
 
                 with st.chat_message("assistant", avatar=URL_LOGO_COLEGIO):
                     with st.spinner("Escribiendo..."):
@@ -317,54 +295,41 @@ else:
 
             st.divider()
             
-            # --- Validar que el estudiante haya participado ---
             ha_interactuado = len(st.session_state.mensajes) > 1
             if not ha_interactuado:
-                st.info("💡 Escribe al menos un mensaje o sube tu archivo en el chat antes de entregar la actividad.")
+                st.info("💡 Escribe al menos un mensaje o sube un archivo antes de entregar.")
 
             col_vacia, col_boton = st.columns([2, 1])
             with col_boton:
-                if st.button("📤 Entregar Actividad para Evaluar", type="primary", use_container_width=True, disabled=not ha_interactuado):
-                    historial_texto = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.mensajes])
-                    
-                    with st.spinner("🧑‍🏫 Evaluando desempeño de manera objetiva..."):
+                if st.button("📤 Entregar Actividad", type="primary", use_container_width=True, disabled=not ha_interactuado):
+                    with st.spinner("🧑‍🏫 Evaluando..."):
                         try:
-                            # 1. Llamamos a la IA para que evalúe
                             resultado_json_str = evaluar_actividad(tutoria_actual, st.session_state.mensajes)
                             datos_evaluacion = json.loads(resultado_json_str)
                             
-                        # ... dentro del botón "Entregar Actividad" ...
-                        # Debes concatenar el historial para guardarlo
-                        historial_completo = json.dumps(st.session_state.mensajes) 
-
-                        supabase.table("evaluaciones").insert({
-                            "estudiante_id": perfil_actual['id'],
-                            "tarea": tutoria_actual['mision'],
-                            "nota": datos_evaluacion['nota'],
-                            "feedback": datos_evaluacion['feedback'],
-                            "historial_evidencia": historial_completo # NUEVO: Guardamos toda la conversación/archivos
-                        }).execute()
+                            # NUEVO: Guardamos el historial completo para auditoría
+                            historial_completo = json.dumps(st.session_state.mensajes)
                             
-                            # 3. Marcamos la tutoría como completada
+                            supabase.table("evaluaciones").insert({
+                                "estudiante_id": perfil_actual['id'],
+                                "tarea": tutoria_actual['mision'],
+                                "nota": datos_evaluacion['nota'],
+                                "feedback": datos_evaluacion['feedback'],
+                                "historial_evidencia": historial_completo
+                            }).execute()
+                            
                             supabase.table("tutorias").update({"estado": "completada"}).eq("id", tutoria_actual['id']).execute()
-                            
-                            # 4. Actualizamos la sesión para mostrar los resultados
                             st.session_state['resultado_evaluacion'] = datos_evaluacion
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Hubo un error al generar la evaluación: {e}")
+                            st.error(f"Error: {e}")
         
-        # --- PANTALLA REPORTE FINAL ---
         else:
             datos = st.session_state['resultado_evaluacion']
-            st.markdown("### 📊 Actividad Completada y Evaluada")
-            color_nota = "green" if datos['nota'] >= 60 else "red"
-            st.markdown(f"<h1 style='text-align: center; color: {color_nota}; font-size: 4rem;'>{datos['nota']}/100</h1>", unsafe_allow_html=True)
+            st.markdown("### 📊 Actividad Completada")
+            st.markdown(f"<h1 style='text-align: center; color: green;'>{datos['nota']}/100</h1>", unsafe_allow_html=True)
             st.info(f"**🗣️ Comentario:**\n{datos['feedback']}")
-            col_buenas, col_mejoras = st.columns(2)
-            with col_buenas: st.success(f"**✅ Puntos Fuertes:**\n{datos['puntos_fuertes']}")
-            with col_mejoras: st.warning(f"**📈 Áreas de Mejora:**\n{datos['areas_mejora']}")
-            if st.button("Regresar a mis misiones", type="primary"):
+            if st.button("Regresar", type="primary"):
                 del st.session_state['tutoria_activa']
                 del st.session_state['resultado_evaluacion']
                 st.rerun()
