@@ -6,4 +6,4 @@ python-dotenv
 pandas
 pypdf
 gTTS
-audio-recorder-streamlit
+
