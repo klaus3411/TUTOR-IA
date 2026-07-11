@@ -235,10 +235,12 @@ else:
         st.success(f"🎯 **{tutoria_actual['asignatura']}:** {tutoria_actual['mision']}")
 
         if 'resultado_evaluacion' not in st.session_state:
+            # RENDERIZADO DEL HISTORIAL DE MENSAJES
             for mensaje in st.session_state.mensajes:
                 avatar_icon = "🧑‍🎓" if mensaje["role"] == "user" else URL_LOGO_COLEGIO
                 with st.chat_message(mensaje["role"], avatar=avatar_icon):
                     if isinstance(mensaje["content"], list):
+                        # Dibuja las imágenes subidas en el historial
                         for item in mensaje["content"]:
                             if item["type"] == "text":
                                 st.markdown(item["text"])
@@ -246,7 +248,14 @@ else:
                                 b64_img = item["image_url"]["url"].split(",")[1]
                                 st.image(base64.b64decode(b64_img), width=350)
                     else:
-                        st.markdown(mensaje["content"])
+                        # Dibuja el texto normal y los PDFs subidos en el historial
+                        if "[DOCUMENTO PDF ADJUNTO]:" in mensaje["content"]:
+                            partes = mensaje["content"].split("[DOCUMENTO PDF ADJUNTO]:")
+                            st.markdown(partes[0].strip())
+                            with st.expander("📄 Documento PDF Adjunto (Texto Extraído)"):
+                                st.text(partes[1].strip()) # st.text evita que símbolos extraños del PDF rompan la página
+                        else:
+                            st.markdown(mensaje["content"])
 
             with st.expander("📎 Adjuntar Imagen o Documento PDF para tu tarea"):
                 archivo_subido = st.file_uploader("Sube una foto o PDF y escribe en el chat para enviarlo.", type=["pdf", "png", "jpg", "jpeg", "webp"])
@@ -255,14 +264,16 @@ else:
 
             if pregunta := st.chat_input("Escribe tu mensaje para enviar..."):
                 contenido_final = pregunta
+                texto_pdf_extraido = ""
                 
+                # Procesamiento del archivo justo antes de enviar
                 if archivo_subido is not None:
                     if archivo_subido.type == "application/pdf":
                         if PDF_DISPONIBLE:
                             try:
                                 lector = PdfReader(archivo_subido)
-                                texto_pdf = "\n".join([pagina.extract_text() for pagina in lector.pages])
-                                contenido_final = f"{pregunta}\n\n[DOCUMENTO PDF ADJUNTO]:\n{texto_pdf}"
+                                texto_pdf_extraido = "\n".join([pagina.extract_text() for pagina in lector.pages])
+                                contenido_final = f"{pregunta}\n\n[DOCUMENTO PDF ADJUNTO]:\n{texto_pdf_extraido}"
                                 st.session_state.mensajes.append({"role": "user", "content": contenido_final})
                             except Exception as e:
                                 st.error(f"Error al leer PDF: {e}")
@@ -284,8 +295,15 @@ else:
                 else:
                     st.session_state.mensajes.append({"role": "user", "content": pregunta})
 
+                # Visualización instantánea para el estudiante
                 with st.chat_message("user", avatar="🧑‍🎓"):
                     st.markdown(pregunta)
+                    if archivo_subido is not None:
+                        if archivo_subido.type.startswith("image/"):
+                            st.image(archivo_subido, width=350)
+                        elif archivo_subido.type == "application/pdf" and texto_pdf_extraido:
+                            with st.expander("📄 Documento PDF Adjunto (Texto Extraído)"):
+                                st.text(texto_pdf_extraido)
 
                 with st.chat_message("assistant", avatar=URL_LOGO_COLEGIO):
                     with st.spinner("Escribiendo..."):
