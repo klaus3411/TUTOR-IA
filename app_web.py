@@ -261,11 +261,9 @@ else:
             st.info("🎙️ **Modo Conversación Activado:** La IA te responderá con voz hablada en esta misión.")
 
         if 'resultado_evaluacion' not in st.session_state:
-            # --- RENDERIZADO DEL HISTORIAL DE MENSAJES ---
             for index, mensaje in enumerate(st.session_state.mensajes):
                 avatar_icon = "🧑‍🎓" if mensaje["role"] == "user" else URL_LOGO_COLEGIO
                 with st.chat_message(mensaje["role"], avatar=avatar_icon):
-                    # 1. Dibujar Imágenes
                     if isinstance(mensaje["content"], list):
                         for item in mensaje["content"]:
                             if item["type"] == "text":
@@ -274,7 +272,6 @@ else:
                                 b64_img = item["image_url"]["url"].split(",")[1]
                                 st.image(base64.b64decode(b64_img), width=350)
                     else:
-                        # 2. Dibujar PDFs o Texto normal
                         if "[DOCUMENTO PDF ADJUNTO]:" in mensaje["content"]:
                             partes = mensaje["content"].split("[DOCUMENTO PDF ADJUNTO]:")
                             st.markdown(partes[0].strip())
@@ -283,13 +280,10 @@ else:
                         else:
                             st.markdown(mensaje["content"])
                             
-                    # 3. Dibujar el Reproductor de Audio (Si existe en la memoria)
                     if mensaje.get("audio_bytes"):
-                        # Solo el último mensaje de la lista se reproduce automáticamente para evitar caos de sonidos
                         es_el_ultimo = (index == len(st.session_state.mensajes) - 1)
                         st.audio(mensaje["audio_bytes"], format="audio/mp3", autoplay=es_el_ultimo)
 
-            # --- ZONA MULTIMEDIA: PDF, IMÁGENES Y VOZ NATIVA ---
             col_doc, col_voz = st.columns([1, 1])
             with col_doc:
                 with st.expander("📎 Adjuntar PDF / Imagen"):
@@ -314,7 +308,6 @@ else:
                     else:
                         st.warning("⚠️ La librería gTTS no está instalada.")
 
-            # --- CAPTURAMOS EL INPUT (Por teclado O por voz) ---
             pregunta_escrita = st.chat_input("Escribe tu mensaje para enviar...")
             pregunta_voz = st.session_state.get('mensaje_voz_pendiente')
             
@@ -327,7 +320,6 @@ else:
                 contenido_final = pregunta
                 texto_pdf_extraido = ""
                 
-                # Procesamiento del archivo adjunto
                 if archivo_subido is not None:
                     if archivo_subido.type == "application/pdf":
                         if PDF_DISPONIBLE:
@@ -350,7 +342,15 @@ else:
                 else:
                     st.session_state.mensajes.append({"role": "user", "content": contenido_final})
 
-                # RESPUESTA DE LA IA + GENERACIÓN DE VOZ
+                with st.chat_message("user", avatar="🧑‍🎓"):
+                    st.markdown(pregunta)
+                    if archivo_subido is not None:
+                        if archivo_subido.type.startswith("image/"):
+                            st.image(archivo_subido, width=350)
+                        elif archivo_subido.type == "application/pdf" and texto_pdf_extraido:
+                            with st.expander("📄 Documento PDF Adjunto (Texto Extraído)"):
+                                st.text(texto_pdf_extraido)
+
                 with st.chat_message("assistant", avatar=URL_LOGO_COLEGIO):
                     with st.spinner("Pensando..."):
                         respuesta = generar_respuesta(perfil_actual, tutoria_actual, pregunta, st.session_state.mensajes)
@@ -363,13 +363,12 @@ else:
                                 tts.write_to_fp(fp)
                                 audio_generado = fp.getvalue()
                             except Exception as e:
-                                pass # Si falla el audio, al menos entregamos el texto
+                                pass 
                 
-                # Guardamos el mensaje en el historial JUNTO CON EL AUDIO
                 st.session_state.mensajes.append({
                     "role": "assistant", 
                     "content": respuesta,
-                    "audio_bytes": audio_generado # Este dato permite dibujar el reproductor
+                    "audio_bytes": audio_generado 
                 })
                 st.rerun() 
 
@@ -387,14 +386,13 @@ else:
                             resultado_json_str = evaluar_actividad(tutoria_actual, st.session_state.mensajes)
                             datos_evaluacion = json.loads(resultado_json_str)
                             
-                            # Filtro estricto: Eliminamos los bytes de audio antes de guardar en la Base de Datos
-                            # Si no hacemos esto, json.dumps() colapsaría al intentar guardar un MP3 gigante.
                             historial_limpio_para_db = []
                             for m in st.session_state.mensajes:
                                 mensaje_copia = {"role": m["role"], "content": m["content"]}
                                 historial_limpio_para_db.append(mensaje_copia)
                                 
-                            historial_completo = json.dumps(historial_limpio_para_db)
+                            # SOLUCIÓN: force ascii=False e indent=4 para mantener los acentos y formatearlo bonito.
+                            historial_completo = json.dumps(historial_limpio_para_db, ensure_ascii=False, indent=4)
                             
                             supabase.table("evaluaciones").insert({
                                 "estudiante_id": perfil_actual['id'],
