@@ -1,8 +1,6 @@
 import streamlit as st
 import os
 import pandas as pd
-import json
-import base64
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from sentence_transformers import SentenceTransformer
@@ -18,6 +16,7 @@ st.set_page_config(page_title="Tablero del Profesor", page_icon="👨‍🏫", l
 st.title("👨‍🏫 Tablero Analítico del Profesor")
 st.markdown("Visualiza el rendimiento, gestiona el conocimiento de la IA y administra a tus alumnos.")
 
+# Contraseña dura para el prototipo
 PASSWORD_PROFESOR = "Alternancia2024"
 
 contrasena_ingresada = st.text_input("🔑 Contraseña de acceso:", type="password")
@@ -92,51 +91,18 @@ with tab_analiticas:
                     csv = df_completo_mostrar.to_csv(index=False).encode('utf-8')
                     st.download_button(label="⬇️ Descargar Historial en Excel", data=csv, file_name="historial_calificaciones.csv", mime="text/csv", type="primary")
 
-                    # --- VISUALIZADOR DE CHAT Y EVIDENCIAS MEJORADO ---
                     st.divider()
                     st.subheader("🔍 Auditoría Detallada de Entregas")
-                    st.markdown("Revisa exactamente qué archivos subió el alumno y la conversación visual.")
+                    st.markdown("Revisa la evidencia de los alumnos o **elimina los registros de prueba**.")
                     
                     for item in res_eval.data:
                         nombre_al = df_estudiantes[df_estudiantes['id'] == item['estudiante_id']]['nombre'].values[0] if not df_estudiantes[df_estudiantes['id'] == item['estudiante_id']].empty else "Alumno Desconocido"
                         
                         with st.expander(f"📚 {nombre_al} | {item['tarea']} | Nota: {item['nota']}/100"):
                             st.write(f"**🗣️ Feedback de la IA:** {item['feedback']}")
-                            st.markdown("**📂 Conversación y Evidencias:**")
+                            st.markdown("**📂 Evidencia del Estudiante (Conversación y Archivos):**")
+                            st.code(item.get('historial_evidencia', 'No hay evidencia guardada.'), language="json")
                             
-                            evidencia_json = item.get('historial_evidencia', '[]')
-                            try:
-                                mensajes = json.loads(evidencia_json)
-                                for m in mensajes:
-                                    if m['role'] == 'system': continue
-                                    
-                                    role_emoji = "🧑‍🎓 **Alumno:**" if m['role'] == 'user' else "🤖 **Tutor IA:**"
-                                    
-                                    # Si el mensaje contiene una IMAGEN
-                                    if isinstance(m['content'], list):
-                                        for parte in m['content']:
-                                            if parte['type'] == 'text':
-                                                st.markdown(f"{role_emoji} {parte['text']}")
-                                            elif parte['type'] == 'image_url':
-                                                try:
-                                                    b64_data = parte['image_url']['url'].split(",")[1]
-                                                    st.image(base64.b64decode(b64_data), width=400)
-                                                except Exception:
-                                                    st.error("⚠️ Imagen no disponible")
-                                    # Si el mensaje es TEXTO (o un PDF inyectado)
-                                    else:
-                                        texto = m['content']
-                                        if "[DOCUMENTO PDF ADJUNTO]:" in texto:
-                                            partes = texto.split("[DOCUMENTO PDF ADJUNTO]:")
-                                            st.markdown(f"{role_emoji} {partes[0]}")
-                                            with st.expander("📄 Ver texto del PDF Adjunto"):
-                                                st.info(partes[1])
-                                        else:
-                                            st.markdown(f"{role_emoji} {texto}")
-                            except Exception as e:
-                                st.code(evidencia_json, language="json")
-                            
-                            # Botón para eliminar
                             col_vacia, col_borrar = st.columns([4, 1])
                             with col_borrar:
                                 if st.button("🗑️ Eliminar registro", key=f"del_{item['id']}"):
@@ -151,7 +117,7 @@ with tab_analiticas:
                 st.error(f"⚠️ Error cargando historial de notas. Detalle: {e}")
         
         except Exception as e:
-            st.error(f"Ocurrió un error general: {e}")
+            st.error(f"Ocurrió un error general cargando las analíticas: {e}")
 
 # ------------------------------------------
 # PESTAÑA 2: CARGADOR DE CLASES
@@ -238,21 +204,26 @@ with tab_asignaciones:
                 nueva_complejidad = st.radio("Nivel de exigencia:", ["Básico", "Intermedio", "Avanzado"], horizontal=True)
                 nueva_rubrica = st.text_area("Rúbrica de evaluación (Opcional):", placeholder="Ej: Restar puntos si hay mala ortografía.")
                 
+                # --- NUEVO: INTERRUPTOR DE MODO VOZ ---
+                nueva_voz = st.checkbox("🎙️ Activar charla por Voz (La IA hablará en voz alta sus respuestas)")
+                
                 if st.form_submit_button("✅ Crear y Asignar Tutoría", type="primary"):
                     if nueva_tarea:
                         try:
+                            # Añadimos "modo_voz" a la base de datos
                             supabase.table("tutorias").insert({
                                 "estudiante_id": estudiante_seleccionado, 
                                 "asignatura": asignatura, 
                                 "mision": nueva_tarea, 
                                 "complejidad": nueva_complejidad, 
                                 "rubrica": nueva_rubrica, 
-                                "estado": "pendiente"
+                                "estado": "pendiente",
+                                "modo_voz": nueva_voz 
                             }).execute()
                             st.success(f"Tutoría de {asignatura} creada con éxito.")
                             st.rerun() 
                         except Exception as e:
-                            st.error(f"Error al guardar. Detalle: {e}")
+                            st.error(f"Error al guardar. Asegúrate de haber creado la columna 'modo_voz' (boolean) en Supabase. Detalle: {e}")
                     else:
                         st.error("Debes escribir una tarea.")
         
@@ -265,8 +236,12 @@ with tab_asignaciones:
                     st.info(f"¡Excelente! **{nombre_estudiante}** está al día y no tiene tutorías pendientes.")
                 else:
                     df_tut = pd.DataFrame(res_tutorias.data)
-                    df_tut = df_tut[['asignatura', 'mision', 'complejidad']]
-                    df_tut.columns = ['Asignatura', 'Misión Asignada', 'Nivel']
+                    
+                    # Añadimos un indicador visual si la misión es por voz
+                    df_tut['Tipo'] = df_tut.get('modo_voz', pd.Series([False]*len(df_tut))).apply(lambda x: "🎙️ Voz" if x else "✍️ Texto")
+                    
+                    df_tut = df_tut[['asignatura', 'mision', 'Tipo']]
+                    df_tut.columns = ['Asignatura', 'Misión Asignada', 'Modalidad']
                     st.dataframe(df_tut, use_container_width=True, hide_index=True)
                     st.caption(f"Total pendientes: {len(df_tut)}")
             except Exception as e:
