@@ -9,8 +9,8 @@ from groq import Groq
 from sentence_transformers import SentenceTransformer
 import streamlit.components.v1 as components
 
-# --- CONFIGURACIÓN DE AVATAR (VIDEOLLAMADA) ---
-URL_AVATAR_TUTOR = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExYzdyMXgweTl2bXN3MnludzM1bmYwdDBhamUwMDJ1ZHRueHBjOTBzdSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/50y1taalZqPYQdW2YG/giphy.gif" 
+# Aquí puedes poner cualquier link de video MP4 directo que quieras usar como tutor
+URL_AVATAR_VIDEO = "https://assets.mixkit.co/videos/preview/mixkit-animation-of-a-futuristic-robot-head-loop-32777-large.mp4"
 
 # --- LIBRERÍAS OPCIONALES (PDF y VOZ) ---
 try:
@@ -35,40 +35,10 @@ st.markdown("""
 <style>
     [data-testid="stSidebar"] {display: none !important;}
     [data-testid="collapsedControl"] {display: none !important;}
-    /* Diseño del marco de videollamada */
-    .video-call-frame {
-        width: 100%;
-        background: #000;
-        border-radius: 15px;
-        overflow: hidden;
-        position: relative;
-        border: 3px solid #333;
-        text-align: center;
-        margin-bottom: 20px;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-    }
-    .live-indicator {
-        position: absolute;
-        top: 10px;
-        left: 10px;
-        background: #e81c4f;
-        color: white;
-        padding: 4px 10px;
-        border-radius: 5px;
-        font-size: 0.75rem;
-        font-weight: bold;
-        letter-spacing: 1px;
-        animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-        0% { opacity: 1; }
-        50% { opacity: 0.5; }
-        100% { opacity: 1; }
-    }
 </style>
 """, unsafe_allow_html=True)
 
-URL_LOGO_COLEGIO = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSE3X0xDak4bCBuDN64-J9RuKK8l6BrFgnfPFhrSxTT6uaPc5yEaGm77Su6&s=10" 
+URL_LOGO_COLEGIO = "https://scontent.fctg2-1.fna.fbcdn.net/v/t39.30808-6/377432631_785816130218699_8439928282516365142_n.jpg?stp=dst-jpg_tt6&cstp=mx1080x1080&ctp=s1080x1080&_nc_cat=111&ccb=1-7&_nc_sid=6ee11a&_nc_ohc=QkM_KdoM6-8Q7kNvwHZLafy&_nc_oc=Ado8PMT8UfZ5Na3A5PElaVATxsfC2uGumMesGdurEkH6giRzWqSz1reFRnxInqrbSwo&_nc_zt=23&_nc_ht=scontent.fctg2-1.fna&_nc_gid=8GpDrRfgp9dp29bAVZcYkg&_nc_ss=7b289&oh=00_AQA17yO0TLEY20eEhXYhcluOHLBzxi2TEmATg-_PeChiTg&oe=6A544484" 
 
 # Diccionario Maestro de Medallas Disponibles en el Sistema
 MEDALLAS_MAESTRAS = {
@@ -115,7 +85,7 @@ def iniciar_sistemas():
 supabase, cliente_groq, modelo_vectores = iniciar_sistemas()
 
 # ==========================================
-# 3. FUNCIONES GENERALES DEL SISTEMA
+# 3. FUNCIONES DEL TUTOR Y EVALUADOR MULTIMODAL
 # ==========================================
 def obtener_perfil(correo):
     respuesta = supabase.table("estudiantes").select("*").eq("correo", correo).execute()
@@ -134,7 +104,6 @@ def transcribir_audio(audio_bytes):
         return f"[Error al transcribir audio: {e}]"
 
 def otorgar_medalla_logica(estudiante_id, medalla_clave):
-    """Inserta el logro en la base de datos de manera única previniendo duplicados."""
     try:
         comprobacion = supabase.table("medallas_ganadas").select("id").eq("estudiante_id", estudiante_id).eq("medalla_clave", medalla_clave).execute()
         if not comprobacion.data:
@@ -162,7 +131,7 @@ def evaluar_actividad(tutoria, historial_mensajes):
     RÚBRICA DE PENALIZACIÓN: {rubrica}
     
     INSTRUCCIONES DE CALIFICACIÓN (CUMPLE ESTO ESTRICTAMENTE):
-    1. NO REGALES NOTA. Si el estudiante solo dijo "hola", no hizo la tarea o la evadió, la nota debe ser menor a 30 (incluso 0).
+    1. NO REGALES NOTA. Si el estudiante solo dijo "hola", no hizo la tarea o la evadió, la nota debe ser menor a 30.
     2. Si la respuesta es mediocre, copiada o incompleta, la nota debe estar entre 40 y 60.
     3. Solo da más de 85 si el estudiante resolvió PERFECTAMENTE la misión.
     4. Inicia en 100 y RESTA puntos por cada error, falta de análisis o pereza al responder.
@@ -249,6 +218,7 @@ if not st.session_state.get('usuario_valido', False):
     with col2:
         st.markdown(f"<div style='text-align: center;'><img src='{URL_LOGO_COLEGIO}' width='150' style='border-radius: 50%;'></div>", unsafe_allow_html=True)
         st.markdown("<h2 style='text-align: center;'>Portal Educativo</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #4B5563;'>Ingresa para ver tus misiones.</p>", unsafe_allow_html=True)
         
         with st.form("login_form"):
             correo_input = st.text_input("✉️ Correo Institucional:")
@@ -263,30 +233,24 @@ if not st.session_state.get('usuario_valido', False):
                         st.error("Correo no encontrado en el sistema.")
                 else:
                     st.warning("Ingresa tu correo.")
-                    
         st.markdown("<br><p style='text-align: center;'><a href='/tablero_profesor' target='_self' style='color: #9CA3AF; text-decoration: none; font-size: 0.8rem;'>👨‍🏫 Acceso Docente</a></p>", unsafe_allow_html=True)
 
 else:
     perfil_actual = st.session_state['perfil']
-    col_saludo, col_salir = st.columns([3, 1])
-    with col_saludo:
-        st.markdown(f"### 👋 Hola, {perfil_actual['nombre']}")
-    with col_salir:
-        if st.button("🚪 Salir", use_container_width=True):
-            st.session_state.clear()
-            st.rerun()
-            
-    st.divider()
     
+    # Si NO estamos dentro de una tutoría, mostramos el Dashboard normal
     if 'tutoria_activa' not in st.session_state:
-        # ==========================================
-        # SISTEMA DE PESTAÑAS (MISIONES vs RENDIMIENTO)
-        # ==========================================
+        col_saludo, col_salir = st.columns([3, 1])
+        with col_saludo:
+            st.markdown(f"### 👋 Hola, {perfil_actual['nombre']}")
+        with col_salir:
+            if st.button("🚪 Salir", use_container_width=True):
+                st.session_state.clear()
+                st.rerun()
+                
+        st.divider()
         tab_misiones, tab_rendimiento = st.tabs(["🎮 Mis Misiones", "📊 Mi Rendimiento"])
         
-        # ------------------------------------------
-        # PESTAÑA 1: MIS MISIONES Y MEDALLAS
-        # ------------------------------------------
         with tab_misiones:
             try:
                 res_med_db = supabase.table("medallas_ganadas").select("medalla_clave").eq("estudiante_id", perfil_actual['id']).execute()
@@ -294,7 +258,6 @@ else:
                 
                 st.markdown("#### 🏆 Tus Logros Académicos")
                 columnas_medallas = st.columns(len(MEDALLAS_MAESTRAS))
-                
                 for index, (clave, metadatos) in enumerate(MEDALLAS_MAESTRAS.items()):
                     with columnas_medallas[index]:
                         if clave in claves_ganadas:
@@ -341,9 +304,6 @@ else:
             except Exception as e:
                 st.error("Error al cargar las tutorías.")
 
-        # ------------------------------------------
-        # PESTAÑA 2: MI RENDIMIENTO
-        # ------------------------------------------
         with tab_rendimiento:
             st.markdown("#### 📈 Resumen de tu Desempeño")
             try:
@@ -379,12 +339,11 @@ else:
                         fecha_corta = evaluacion['created_at'][:10]
                         nota = evaluacion['nota']
                         color_nota = "🟢" if nota >= 85 else "🟡" if nota >= 60 else "🔴"
-                        
                         with st.expander(f"{color_nota} {fecha_corta} | {evaluacion['tarea']} - Nota: {nota}/100"):
                             st.markdown(f"**🗣️ Comentario del Tutor IA:**")
                             st.info(evaluacion['feedback'])
             except Exception as e:
-                st.error("No se pudo cargar tu historial de rendimiento en este momento.")
+                st.error("No se pudo cargar tu historial.")
 
     # ------------------------------------------
     # PANTALLA DE TUTORÍA ACTIVA
@@ -393,27 +352,104 @@ else:
         tutoria_actual = st.session_state['tutoria_activa']
         modo_voz_activado = tutoria_actual.get('modo_voz', False)
         
-        # --- MARCO DE VIDEOCONFERENCIA (AVATAR) ---
-        st.markdown(f"""
-        <div class="video-call-frame">
-            <div class="live-indicator">● LIVE</div>
-            <img src="{URL_AVATAR_TUTOR}" style="width: 100%; height: 200px; object-fit: cover;">
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if st.button("⬅️ Volver a mis misiones", use_container_width=False):
-            del st.session_state['tutoria_activa']
-            if 'resultado_evaluacion' in st.session_state: del st.session_state['resultado_evaluacion']
-            st.rerun()
-            
-        st.success(f"🎯 **{tutoria_actual['asignatura']}:** {tutoria_actual['mision']}")
+        # ========================================================
+        # MAGIA VISUAL: INYECCIÓN CONDICIONAL DEL MODO INMERSIVO
+        # ========================================================
         if modo_voz_activado:
-            st.info("🎙️ **Modo Conversación Activado:** La IA te responderá con voz hablada en esta misión.")
+            # Si el modo voz está activado, inyectamos el CSS oscuro y el video de fondo
+            st.markdown(f"""
+            <style>
+                /* Volver el fondo de la app completamente transparente */
+                [data-testid="stAppViewContainer"] {{
+                    background-color: transparent !important;
+                }}
+                [data-testid="stHeader"] {{
+                    background: transparent !important;
+                }}
+                
+                /* El video en el fondo de todo (Full Screen) */
+                .fullscreen-bg {{
+                    position: fixed;
+                    right: 0;
+                    bottom: 0;
+                    min-width: 100vw;
+                    min-height: 100vh;
+                    z-index: -100;
+                    object-fit: cover;
+                    filter: brightness(0.4); /* Oscurecemos para leer el chat */
+                }}
+                
+                /* Burbujas de chat tipo WhatsApp (Cristal oscuro) */
+                [data-testid="stChatMessage"] {{
+                    background-color: rgba(0, 0, 0, 0.6) !important;
+                    backdrop-filter: blur(10px);
+                    border-radius: 15px;
+                    padding: 15px;
+                    margin-bottom: 10px;
+                    color: white !important;
+                    border: 1px solid rgba(255,255,255,0.1);
+                }}
+                [data-testid="stChatMessage"] p {{
+                    color: white !important;
+                }}
+                
+                /* Controles oscuros semi-transparentes */
+                [data-testid="stExpander"] {{
+                    background-color: rgba(0, 0, 0, 0.6) !important;
+                    backdrop-filter: blur(10px);
+                    border-radius: 10px;
+                    border: 1px solid rgba(255,255,255,0.2);
+                }}
+                [data-testid="stExpander"] p, [data-testid="stExpander"] span {{
+                    color: white !important;
+                }}
+                
+                /* Barra superior estilo "Llamada Activa" */
+                .top-call-bar {{
+                    background: rgba(0,0,0,0.6); 
+                    padding: 10px 15px; 
+                    border-radius: 15px; 
+                    display: flex; 
+                    justify-content: space-between; 
+                    align-items: center; 
+                    margin-bottom: 20px; 
+                    backdrop-filter: blur(10px); 
+                    border: 1px solid rgba(255,255,255,0.1);
+                }}
+            </style>
+            
+            <!-- INYECCIÓN DEL VIDEO HTML5 REAL -->
+            <video autoplay loop muted playsinline class="fullscreen-bg">
+                <source src="{URL_AVATAR_VIDEO}" type="video/mp4">
+            </video>
+            """, unsafe_allow_html=True)
+            
+            # BARRA SUPERIOR MODO LIVE
+            col_back, col_title = st.columns([1, 4])
+            with col_back:
+                if st.button("⬅️ Salir", use_container_width=True):
+                    del st.session_state['tutoria_activa']
+                    if 'resultado_evaluacion' in st.session_state: del st.session_state['resultado_evaluacion']
+                    st.rerun()
+            with col_title:
+                st.markdown(f"""
+                <div class="top-call-bar">
+                    <h4 style="color: white; margin: 0;">🔴 LIVE | {tutoria_actual['asignatura']}</h4>
+                </div>
+                """, unsafe_allow_html=True)
+                
+        else:
+            # SI NO ESTÁ ACTIVADO EL MODO VOZ, SE VE COMO UNA PÁGINA NORMAL
+            if st.button("⬅️ Volver a mis misiones", use_container_width=False):
+                del st.session_state['tutoria_activa']
+                if 'resultado_evaluacion' in st.session_state: del st.session_state['resultado_evaluacion']
+                st.rerun()
+            st.success(f"🎯 **{tutoria_actual['asignatura']}:** {tutoria_actual['mision']}")
+
 
         if 'resultado_evaluacion' not in st.session_state:
-            # Dibujando historial de mensajes
             for index, mensaje in enumerate(st.session_state.mensajes):
-                avatar_icon = "🧑‍🎓" if mensaje["role"] == "user" else URL_LOGO_COLEGIO
+                avatar_icon = "🧑‍🎓" if mensaje["role"] == "user" else ("🤖" if modo_voz_activado else URL_LOGO_COLEGIO)
                 with st.chat_message(mensaje["role"], avatar=avatar_icon):
                     if isinstance(mensaje["content"], list):
                         for item in mensaje["content"]:
@@ -426,7 +462,7 @@ else:
                         if "[DOCUMENTO PDF ADJUNTO]:" in mensaje["content"]:
                             partes = mensaje["content"].split("[DOCUMENTO PDF ADJUNTO]:")
                             st.markdown(partes[0].strip())
-                            with st.expander("📄 Documento PDF Adjunto (Texto Extraído)"):
+                            with st.expander("📄 Ver Documento"):
                                 st.text(partes[1].strip())
                         else:
                             st.markdown(mensaje["content"])
@@ -435,54 +471,50 @@ else:
                         es_el_ultimo = (index == len(st.session_state.mensajes) - 1)
                         st.audio(mensaje["audio_bytes"], format="audio/mp3", autoplay=es_el_ultimo)
 
+            # --- CONTROLES FLOTANTES ---
             col_doc, col_voz = st.columns([1, 1])
             with col_doc:
-                with st.expander("📎 Adjuntar PDF / Imagen"):
-                    archivo_subido = st.file_uploader("Sube y escribe abajo para enviar.", type=["pdf", "png", "jpg", "jpeg", "webp"], label_visibility="collapsed")
-                    if archivo_subido:
-                        st.success("Archivo listo.")
+                with st.expander("📎 Adjuntar PDF/Imagen"):
+                    archivo_subido = st.file_uploader("Sube el archivo", type=["pdf", "png", "jpg", "jpeg", "webp"], label_visibility="collapsed")
+                    if archivo_subido: st.success("Listo.")
             
             with col_voz:
-                with st.expander("🎙️ Enviar nota de voz"):
+                with st.expander("🎙️ Nota de voz"):
                     if VOZ_DISPONIBLE:
-                        st.markdown("<p style='font-size:0.8rem; text-align:center;'>Usa la grabadora a continuación para hablar.</p>", unsafe_allow_html=True)
-                        grabacion = st.audio_input("Graba tu mensaje", label_visibility="collapsed")
-                        
+                        grabacion = st.audio_input("Grabar", label_visibility="collapsed")
                         if grabacion is not None:
                             audio_bytes = grabacion.getvalue()
                             if audio_bytes != st.session_state.get('ultimo_audio'):
                                 st.session_state['ultimo_audio'] = audio_bytes
-                                with st.spinner("⏳ Escuchando tu nota de voz..."):
+                                with st.spinner("⏳ Transcribiendo..."):
                                     texto_voz = transcribir_audio(audio_bytes)
                                     st.session_state['mensaje_voz_pendiente'] = texto_voz
                                     st.rerun() 
                     else:
-                        st.warning("⚠️ La librería gTTS no está instalada.")
+                        st.warning("⚠️ Sin voz.")
 
-            pregunta_escrita = st.chat_input("Escribe tu mensaje para enviar...")
+            # --- INPUT Y PROCESAMIENTO ---
+            pregunta_escrita = st.chat_input("Escribe tu mensaje...")
             pregunta_voz = st.session_state.get('mensaje_voz_pendiente')
             
             pregunta = pregunta_escrita or pregunta_voz
 
             if pregunta:
-                if pregunta_voz:
-                    del st.session_state['mensaje_voz_pendiente']
+                if pregunta_voz: del st.session_state['mensaje_voz_pendiente']
 
                 contenido_final = pregunta
                 texto_pdf_extraido = ""
                 
                 if archivo_subido is not None:
                     st.session_state['evidencia_adjuntada_en_mision'] = True
-                    if archivo_subido.type == "application/pdf":
-                        if PDF_DISPONIBLE:
-                            try:
-                                lector = PdfReader(archivo_subido)
-                                texto_pdf_extraido = "\n".join([pagina.extract_text() for pagina in lector.pages])
-                                contenido_final = f"{pregunta}\n\n[DOCUMENTO PDF ADJUNTO]:\n{texto_pdf_extraido}"
-                                st.session_state.mensajes.append({"role": "user", "content": contenido_final})
-                            except Exception as e:
-                                st.error(f"Error al leer PDF: {e}")
-                                st.session_state.mensajes.append({"role": "user", "content": pregunta})
+                    if archivo_subido.type == "application/pdf" and PDF_DISPONIBLE:
+                        try:
+                            lector = PdfReader(archivo_subido)
+                            texto_pdf_extraido = "\n".join([pagina.extract_text() for pagina in lector.pages])
+                            contenido_final = f"{pregunta}\n\n[DOCUMENTO PDF ADJUNTO]:\n{texto_pdf_extraido}"
+                            st.session_state.mensajes.append({"role": "user", "content": contenido_final})
+                        except:
+                            st.session_state.mensajes.append({"role": "user", "content": pregunta})
                     elif archivo_subido.type.startswith("image/"):
                         bytes_data = archivo_subido.getvalue()
                         base64_encoded = base64.b64encode(bytes_data).decode('utf-8')
@@ -494,19 +526,10 @@ else:
                 else:
                     st.session_state.mensajes.append({"role": "user", "content": contenido_final})
 
-                if pregunta_voz:
-                    st.session_state['voz_utilizada_en_mision'] = True
+                if pregunta_voz: st.session_state['voz_utilizada_en_mision'] = True
 
-                with st.chat_message("user", avatar="🧑‍🎓"):
-                    st.markdown(pregunta)
-                    if archivo_subido is not None:
-                        if archivo_subido.type.startswith("image/"):
-                            st.image(archivo_subido, width=350)
-                        elif archivo_subido.type == "application/pdf" and texto_pdf_extraido:
-                            with st.expander("📄 Documento PDF Adjunto (Texto Extraído)"):
-                                st.text(texto_pdf_extraido)
-
-                with st.chat_message("assistant", avatar=URL_LOGO_COLEGIO):
+                avatar_ia = "🤖" if modo_voz_activado else URL_LOGO_COLEGIO
+                with st.chat_message("assistant", avatar=avatar_ia):
                     with st.spinner("Pensando..."):
                         respuesta = generar_respuesta(perfil_actual, tutoria_actual, pregunta, st.session_state.mensajes)
                         
@@ -517,96 +540,71 @@ else:
                                 fp = io.BytesIO()
                                 tts.write_to_fp(fp)
                                 audio_generado = fp.getvalue()
-                            except:
-                                pass 
+                            except: pass 
                 
-                st.session_state.mensajes.append({
-                    "role": "assistant", 
-                    "content": respuesta,
-                    "audio_bytes": audio_generado 
-                })
+                st.session_state.mensajes.append({"role": "assistant", "content": respuesta, "audio_bytes": audio_generado})
                 st.rerun() 
 
             st.divider()
-            
             ha_interactuado = len(st.session_state.mensajes) > 1
-            if not ha_interactuado:
-                st.info("💡 Escribe al menos un mensaje o sube un archivo antes de entregar.")
-
-            col_vacia, col_boton = st.columns([2, 1])
-            with col_boton:
-                if st.button("📤 Entregar Actividad", type="primary", use_container_width=True, disabled=not ha_interactuado):
-                    with st.spinner("🧑‍🏫 Evaluando..."):
-                        try:
-                            resultado_json_str = evaluar_actividad(tutoria_actual, st.session_state.mensajes)
-                            datos_evaluacion = json.loads(resultado_json_str)
-                            
-                            historial_limpio_para_db = []
-                            for m in st.session_state.mensajes:
-                                mensaje_copia = {"role": m["role"], "content": m["content"]}
-                                historial_limpio_para_db.append(mensaje_copia)
-                                
-                            historial_completo = json.dumps(historial_limpio_para_db, ensure_ascii=False, indent=4)
-                            
-                            supabase.table("evaluaciones").insert({
-                                "estudiante_id": perfil_actual['id'],
-                                "tarea": tutoria_actual['mision'],
-                                "nota": datos_evaluacion['nota'],
-                                "feedback": datos_evaluacion['feedback'],
-                                "historial_evidencia": historial_completo
-                            }).execute()
-                            
-                            supabase.table("tutorias").update({"estado": "completada"}).eq("id", tutoria_actual['id']).execute()
-                            
-                            # ==========================================
-                            # NÚCLEO DE EVALUACIÓN DE LOGROS (GAMIFICACIÓN)
-                            # ==========================================
-                            medallas_desbloqueadas_ahora = []
-                            
-                            if otorgar_medalla_logica(perfil_actual['id'], "primera_mision"):
-                                medallas_desbloqueadas_ahora.append("primera_mision")
-                                
-                            if datos_evaluacion['nota'] >= 85:
-                                if otorgar_medalla_logica(perfil_actual['id'], "mente_brillante"):
-                                    medallas_desbloqueadas_ahora.append("mente_brillante")
-                                    
-                            if datos_evaluacion['nota'] == 100:
-                                if otorgar_medalla_logica(perfil_actual['id'], "perfeccion"):
-                                    medallas_desbloqueadas_ahora.append("perfeccion")
-                                    
-                            if st.session_state.get('voz_utilizada_en_mision', False) or modo_voz_activado:
-                                if otorgar_medalla_logica(perfil_actual['id'], "audiofilo"):
-                                    medallas_desbloqueadas_ahora.append("audiofilo")
-                                    
-                            if st.session_state.get('evidencia_adjuntada_en_mision', False):
-                                if otorgar_medalla_logica(perfil_actual['id'], "investigador"):
-                                    medallas_desbloqueadas_ahora.append("investigador")
-                            
-                            if medallas_desbloqueadas_ahora:
-                                st.session_state['nuevas_medallas'] = medallas_desbloqueadas_ahora
-                            
-                            st.session_state['resultado_evaluacion'] = datos_evaluacion
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error: {e}")
+            if st.button("📤 Entregar Actividad", type="primary", use_container_width=True, disabled=not ha_interactuado):
+                with st.spinner("🧑‍🏫 Evaluando..."):
+                    try:
+                        resultado_json_str = evaluar_actividad(tutoria_actual, st.session_state.mensajes)
+                        datos_evaluacion = json.loads(resultado_json_str)
+                        
+                        historial_limpio_para_db = [{"role": m["role"], "content": m["content"]} for m in st.session_state.mensajes]
+                        historial_completo = json.dumps(historial_limpio_para_db, ensure_ascii=False, indent=4)
+                        
+                        supabase.table("evaluaciones").insert({
+                            "estudiante_id": perfil_actual['id'],
+                            "tarea": tutoria_actual['mision'],
+                            "nota": datos_evaluacion['nota'],
+                            "feedback": datos_evaluacion['feedback'],
+                            "historial_evidencia": historial_completo
+                        }).execute()
+                        
+                        supabase.table("tutorias").update({"estado": "completada"}).eq("id", tutoria_actual['id']).execute()
+                        
+                        medallas_desbloqueadas_ahora = []
+                        if otorgar_medalla_logica(perfil_actual['id'], "primera_mision"): medallas_desbloqueadas_ahora.append("primera_mision")
+                        if datos_evaluacion['nota'] >= 85 and otorgar_medalla_logica(perfil_actual['id'], "mente_brillante"): medallas_desbloqueadas_ahora.append("mente_brillante")
+                        if datos_evaluacion['nota'] == 100 and otorgar_medalla_logica(perfil_actual['id'], "perfeccion"): medallas_desbloqueadas_ahora.append("perfeccion")
+                        if (st.session_state.get('voz_utilizada_en_mision', False) or modo_voz_activado) and otorgar_medalla_logica(perfil_actual['id'], "audiofilo"): medallas_desbloqueadas_ahora.append("audiofilo")
+                        if st.session_state.get('evidencia_adjuntada_en_mision', False) and otorgar_medalla_logica(perfil_actual['id'], "investigador"): medallas_desbloqueadas_ahora.append("investigador")
+                        
+                        if medallas_desbloqueadas_ahora: st.session_state['nuevas_medallas'] = medallas_desbloqueadas_ahora
+                        st.session_state['resultado_evaluacion'] = datos_evaluacion
+                        st.rerun()
+                    except Exception as e: st.error(f"Error: {e}")
         
         else:
+            # SI ENTREGÓ LA ACTIVIDAD, FONDO OSCURO PARA EL PUNTAJE (SI ESTABA EN MODO VOZ)
             datos = st.session_state['resultado_evaluacion']
+            
+            if modo_voz_activado:
+                st.markdown("<div style='background:rgba(0,0,0,0.8); padding: 20px; border-radius: 15px;'>", unsafe_allow_html=True)
+                
             st.markdown("### 📊 Actividad Completada")
-            st.markdown(f"<h1 style='text-align: center; color: green;'>{datos['nota']}/100</h1>", unsafe_allow_html=True)
+            
+            # Ajuste de color del número dependiendo del modo
+            color_nota = "white" if modo_voz_activado else "green"
+            st.markdown(f"<h1 style='text-align: center; color: {color_nota};'>{datos['nota']}/100</h1>", unsafe_allow_html=True)
             st.info(f"**🗣️ Comentario:**\n{datos['feedback']}")
             
             if 'nuevas_medallas' in st.session_state:
                 st.balloons() 
-                st.markdown("#### 🎉 ¡Has desbloqueado nuevos logros en esta misión!")
+                st.markdown("#### 🎉 ¡Nuevos logros desbloqueados!")
                 for clave_m in st.session_state['nuevas_medallas']:
                     meta = MEDALLAS_MAESTRAS[clave_m]
                     st.success(f"**{meta['icono']} {meta['titulo']}:** {meta['desc']}")
             
-            if st.button("Regresar", type="primary"):
+            if modo_voz_activado:
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            if st.button("Regresar a Misiones", type="primary"):
                 del st.session_state['tutoria_activa']
                 del st.session_state['resultado_evaluacion']
-                if 'nuevas_medallas' in st.session_state: del st.session_state['nuevas_medallas']
-                if 'voz_utilizada_en_mision' in st.session_state: del st.session_state['voz_utilizada_en_mision']
-                if 'evidencia_adjuntada_en_mision' in st.session_state: del st.session_state['evidencia_adjuntada_en_mision']
+                for key in ['nuevas_medallas', 'voz_utilizada_en_mision', 'evidencia_adjuntada_en_mision']:
+                    if key in st.session_state: del st.session_state[key]
                 st.rerun()
