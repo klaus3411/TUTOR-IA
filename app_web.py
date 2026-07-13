@@ -68,7 +68,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-URL_LOGO_COLEGIO = "https://scontent.fctg2-1.fna.fbcdn.net/v/t39.30808-6/377432631_785816130218699_8439928282516365142_n.jpg?stp=dst-jpg_tt6&cstp=mx1080x1080&ctp=s1080x1080&_nc_cat=111&ccb=1-7&_nc_sid=6ee11a&_nc_ohc=QkM_KdoM6-8Q7kNvwHZLafy&_nc_oc=Ado8PMT8UfZ5Na3A5PElaVATxsfC2uGumMesGdurEkH6giRzWqSz1reFRnxInqrbSwo&_nc_zt=23&_nc_ht=scontent.fctg2-1.fna&_nc_gid=8GpDrRfgp9dp29bAVZcYkg&_nc_ss=7b289&oh=00_AQA17yO0TLEY20eEhXYhcluOHLBzxi2TEmATg-_PeChiTg&oe=6A544484" 
+URL_LOGO_COLEGIO = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSE3X0xDak4bCBuDN64-J9RuKK8l6BrFgnfPFhrSxTT6uaPc5yEaGm77Su6&s=10" 
 
 # Diccionario Maestro de Medallas Disponibles en el Sistema
 MEDALLAS_MAESTRAS = {
