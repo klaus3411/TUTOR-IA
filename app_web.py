@@ -357,81 +357,110 @@ else:
         if modo_voz_activado:
             st.markdown(f"""
             <style>
-                /* 1. Fondo de toda la aplicación a pantalla completa usando la URL estática */
+                /* 1. Fondo GIF a pantalla completa */
                 .stApp {{
                     background: url("{URL_FONDO_VIDEOLLAMADA}") no-repeat center center fixed !important;
                     background-size: cover !important;
                 }}
 
-                /* 2. Capa oscura (Filtro) para que el texto resalte */
-                [data-testid="stAppViewContainer"] {{
-                    background: rgba(0, 0, 0, 0.45) !important; 
+                /* 2. Quitar fondos blancos de Streamlit (Transparencia Total) */
+                [data-testid="stAppViewContainer"], 
+                [data-testid="stHeader"], 
+                [data-testid="block-container"] {{
+                    background: transparent !important;
                 }}
                 
-                /* Ocultar fondos blancos del Header de Streamlit */
-                [data-testid="stHeader"] {{
+                /* Eliminar la enorme barra blanca del fondo donde se escribe */
+                [data-testid="stBottomBlockContainer"], 
+                [data-testid="stBottom"] {{
                     background: transparent !important;
                 }}
 
-                /* 3. Burbujas de chat tipo WhatsApp (Cristal esmerilado) */
-                [data-testid="stChatMessage"] {{
-                    background-color: rgba(0, 0, 0, 0.55) !important;
-                    backdrop-filter: blur(12px) !important;
-                    -webkit-backdrop-filter: blur(12px) !important;
-                    border-radius: 18px !important;
-                    padding: 15px !important;
-                    margin-bottom: 10px !important;
-                    border: 1px solid rgba(255,255,255,0.15) !important;
-                    box-shadow: 0 4px 6px rgba(0,0,0,0.3) !important;
+                /* 3. El Efecto Gradiente: Oscurece solo de la mitad hacia abajo para leer el chat */
+                .stApp::after {{
+                    content: "";
+                    position: fixed;
+                    bottom: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 60vh;
+                    background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.6) 50%, transparent 100%);
+                    z-index: 0;
+                    pointer-events: none;
                 }}
-                /* Forzar todo el texto interno del chat a blanco */
+
+                /* Asegurar que el contenido del chat quede por encima del gradiente */
+                .stApp > header, .stApp > div {{
+                    z-index: 1;
+                    position: relative;
+                }}
+
+                /* 4. Burbujas de chat estilo WhatsApp (Más pequeñas y alineadas) */
+                [data-testid="stChatMessage"] {{
+                    background-color: rgba(0, 0, 0, 0.45) !important;
+                    backdrop-filter: blur(10px) !important;
+                    -webkit-backdrop-filter: blur(10px) !important;
+                    border-radius: 20px !important;
+                    padding: 12px 18px !important;
+                    margin-bottom: 15px !important;
+                    border: 1px solid rgba(255,255,255,0.15) !important;
+                    box-shadow: 0 4px 6px rgba(0,0,0,0.2) !important;
+                    max-width: 85% !important; /* No ocupa todo el ancho */
+                    width: fit-content !important;
+                }}
+                
+                /* Alinear mensajes del ESTUDIANTE a la DERECHA con color azul tipo iMessage */
+                [data-testid="stChatMessage"]:has(div:contains("🧑‍🎓")) {{
+                    margin-left: auto !important;
+                    background-color: rgba(37, 99, 235, 0.45) !important;
+                }}
+
+                /* Ocultar iconos gigantes predeterminados de Streamlit */
+                [data-testid="stChatMessage"] [data-testid="stChatAvatar"] {{
+                    display: none !important;
+                }}
+
+                /* Forzar todo el texto a blanco */
                 [data-testid="stChatMessage"] p, 
                 [data-testid="stChatMessage"] span, 
                 [data-testid="stChatMessage"] div {{
                     color: #FFFFFF !important;
                 }}
 
-                /* 4. Barra de escribir en la parte inferior (Gris oscuro) */
+                /* 5. Controles (Input y Acordeones) - Cristal Oscuro */
                 [data-testid="stChatInput"] {{
-                    background-color: rgba(0, 0, 0, 0.7) !important;
-                    backdrop-filter: blur(10px) !important;
+                    background-color: rgba(0, 0, 0, 0.6) !important;
+                    backdrop-filter: blur(12px) !important;
                     border: 1px solid rgba(255,255,255,0.2) !important;
-                    border-radius: 20px !important;
+                    border-radius: 25px !important;
                 }}
                 [data-testid="stChatInput"] textarea {{
                     color: white !important;
                 }}
 
-                /* 5. Acordeones (Expander) de PDF y Voz oscuros */
                 [data-testid="stExpander"] {{
-                    background-color: rgba(0, 0, 0, 0.55) !important;
-                    backdrop-filter: blur(12px) !important;
+                    background-color: rgba(0, 0, 0, 0.6) !important;
+                    backdrop-filter: blur(10px) !important;
                     border-radius: 15px !important;
                     border: 1px solid rgba(255,255,255,0.2) !important;
                 }}
-                [data-testid="stExpander"] p, 
-                [data-testid="stExpander"] span, 
-                [data-testid="stExpander"] summary {{
+                [data-testid="stExpander"] * {{
                     color: white !important;
                 }}
 
                 /* 6. Barra Superior de "Llamada Activa" */
                 .top-call-bar {{
-                    background: rgba(0,0,0,0.6); 
-                    padding: 10px 20px; 
+                    background: rgba(0,0,0,0.5); 
+                    padding: 8px 15px; 
                     border-radius: 20px; 
-                    display: flex; 
-                    justify-content: space-between; 
-                    align-items: center; 
-                    margin-bottom: 20px; 
-                    backdrop-filter: blur(10px); 
-                    border: 1px solid rgba(255,255,255,0.15);
-                    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+                    display: inline-block; 
+                    backdrop-filter: blur(8px); 
+                    border: 1px solid rgba(255,255,255,0.2);
                 }}
             </style>
             """, unsafe_allow_html=True)
             
-            # Botones de navegación en Modo Voice (Cristal oscuro)
+            # Botones de navegación superior
             col_back, col_title = st.columns([1, 4])
             with col_back:
                 if st.button("⬅️ Salir", use_container_width=True):
@@ -441,9 +470,13 @@ else:
             with col_title:
                 st.markdown(f"""
                 <div class="top-call-bar">
-                    <h4 style="color: white; margin: 0;">🔴 LIVE | {tutoria_actual['asignatura']}</h4>
+                    <h5 style="color: white; margin: 0;">🔴 LIVE | {tutoria_actual['asignatura']}</h5>
                 </div>
                 """, unsafe_allow_html=True)
+
+            # --- ESPACIADOR VITAL --- 
+            # Esto empuja los mensajes hacia abajo para que NO tapen la cara del avatar
+            st.markdown("<div style='height: 35vh;'></div>", unsafe_allow_html=True)
                 
         else:
             # INTERFAZ TRADICIONAL (Sin CSS inmersivo)
@@ -458,6 +491,9 @@ else:
             for index, mensaje in enumerate(st.session_state.mensajes):
                 avatar_icon = "🧑‍🎓" if mensaje["role"] == "user" else URL_LOGO_COLEGIO
                 with st.chat_message(mensaje["role"], avatar=avatar_icon):
+                    # Agregamos etiqueta oculta para que CSS reconozca de quién es el mensaje y lo alinee
+                    st.markdown(f"<div style='display:none;'>{avatar_icon}</div>", unsafe_allow_html=True)
+                    
                     if isinstance(mensaje["content"], list):
                         for item in mensaje["content"]:
                             if item["type"] == "text":
@@ -488,15 +524,14 @@ else:
             with col_voz:
                 with st.expander("🎙️ Enviar nota de voz"):
                     if VOZ_DISPONIBLE:
-                        st.markdown("<p style='font-size:0.8rem; text-align:center;'>Usa la grabadora a continuación para hablar.</p>", unsafe_allow_html=True)
+                        color_texto = "white" if modo_voz_activado else "black"
+                        st.markdown(f"<p style='font-size:0.8rem; text-align:center; color:{color_texto};'>Usa la grabadora a continuación para hablar.</p>", unsafe_allow_html=True)
                         grabacion = st.audio_input("Graba tu mensaje", label_visibility="collapsed")
                         
                         if grabacion is not None:
                             audio_bytes = grabacion.getvalue()
                             if audio_bytes != st.session_state.get('ultimo_audio'):
                                 st.session_state['ultimo_audio'] = audio_bytes
-                                # Mostrar texto blanco en spinner si está en modo inmersivo
-                                color_texto = "white" if modo_voz_activado else "black"
                                 st.markdown(f"<p style='color:{color_texto}; text-align:center;'>⏳ Escuchando tu nota de voz...</p>", unsafe_allow_html=True)
                                 texto_voz = transcribir_audio(audio_bytes)
                                 st.session_state['mensaje_voz_pendiente'] = texto_voz
@@ -543,9 +578,8 @@ else:
                     st.session_state['voz_utilizada_en_mision'] = True
 
                 with st.chat_message("assistant", avatar=URL_LOGO_COLEGIO):
-                    # Mostrar color según el modo para el texto "Pensando..."
                     color_texto = "white" if modo_voz_activado else "black"
-                    st.markdown(f"<p style='color:{color_texto};'>Pensando...</p>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='display:none;'>🤖</div><p style='color:{color_texto};'>Pensando...</p>", unsafe_allow_html=True)
                     
                     respuesta = generar_respuesta(perfil_actual, tutoria_actual, pregunta, st.session_state.mensajes)
                     
