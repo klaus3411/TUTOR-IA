@@ -9,8 +9,11 @@ from groq import Groq
 from sentence_transformers import SentenceTransformer
 import streamlit.components.v1 as components
 
-# --- AVATAR DEL TUTOR PARA LA VENTANA FLOTANTE ---
-URL_AVATAR_TUTOR = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExYzdyMXgweTl2bXN3MnludzM1bmYwdDBhamUwMDJ1ZHRueHBjOTBzdSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/50y1taalZqPYQdW2YG/giphy.gif" 
+# --- CONFIGURACIÓN DEL AVATAR DEL TUTOR ---
+# Pon aquí una imagen PNG/JPG estática para cuando esté callado
+URL_AVATAR_SILENCIO = "https://drive.google.com/file/d/1j-mH5DSI-dI2n_DE3-mdJBroGTYwfbSK/view?usp=sharing" 
+# Pon aquí el GIF animado para cuando esté hablando (Te dejé un robot genérico)
+URL_AVATAR_HABLANDO = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExYzdyMXgweTl2bXN3MnludzM1bmYwdDBhamUwMDJ1ZHRueHBjOTBzdSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/50y1taalZqPYQdW2YG/giphy.gif" 
 
 # --- LIBRERÍAS OPCIONALES (PDF y VOZ) ---
 try:
@@ -40,7 +43,7 @@ st.markdown("""
 
 URL_LOGO_COLEGIO = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSE3X0xDak4bCBuDN64-J9RuKK8l6BrFgnfPFhrSxTT6uaPc5yEaGm77Su6&s=10" 
 
-# Diccionario Maestro de Medallas Disponibles en el Sistema
+# Diccionario Maestro de Medallas Disponibles
 MEDALLAS_MAESTRAS = {
     "primera_mision": {"titulo": "Primer Paso", "icono": "🥉", "desc": "Completaste tu primera tutoría con éxito."},
     "mente_brillante": {"titulo": "Mente Brillante", "icono": "🥈", "desc": "Obtuviste una calificación de 85 o más puntos."},
@@ -355,69 +358,38 @@ else:
         # MAGIA VISUAL: VENTANA FLOTANTE DE VIDEOLLAMADA (PIP)
         # ========================================================
         if modo_voz_activado:
+            # Aquí inyectamos el CSS y el HTML de la ventana PIP.
+            # Nota que el src inicial es URL_AVATAR_SILENCIO
             st.markdown(f"""
             <style>
-                /* Animación de titilar para el botón LIVE */
                 @keyframes pulse-red {{
-                    0% {{ opacity: 1; }}
-                    50% {{ opacity: 0.3; }}
-                    100% {{ opacity: 1; }}
+                    0% {{ opacity: 1; }} 50% {{ opacity: 0.3; }} 100% {{ opacity: 1; }}
                 }}
-                /* Animación de flotación suave para la ventana */
                 @keyframes float-window {{
-                    0% {{ transform: translateY(0px); }}
-                    50% {{ transform: translateY(-8px); }}
-                    100% {{ transform: translateY(0px); }}
+                    0% {{ transform: translateY(0px); }} 50% {{ transform: translateY(-8px); }} 100% {{ transform: translateY(0px); }}
                 }}
                 
-                /* La Ventana Flotante (Picture-in-Picture) */
                 .floating-pip {{
-                    position: fixed;
-                    top: 80px;
-                    right: 20px;
-                    width: 130px;
-                    height: 180px;
-                    border-radius: 16px;
-                    box-shadow: 0px 10px 30px rgba(0,0,0,0.3);
-                    border: 3px solid #4F46E5;
-                    z-index: 999999; /* Asegura que siempre esté por encima de todo */
-                    overflow: hidden;
-                    background-color: #000;
+                    position: fixed; top: 80px; right: 20px; width: 130px; height: 180px;
+                    border-radius: 16px; box-shadow: 0px 10px 30px rgba(0,0,0,0.3);
+                    border: 3px solid #4F46E5; z-index: 999999; overflow: hidden; background-color: #000;
                     animation: float-window 4s ease-in-out infinite;
                 }}
-                
-                /* El Video/GIF que va dentro de la ventana flotante */
-                .floating-pip img {{
-                    width: 100%;
-                    height: 100%;
-                    object-fit: cover;
-                }}
-                
-                /* El botoncito LIVE rojo en la ventana flotante */
+                .floating-pip img {{ width: 100%; height: 100%; object-fit: cover; }}
                 .live-badge {{
-                    position: absolute;
-                    top: 8px;
-                    right: 8px;
-                    background-color: #ef4444;
-                    color: white;
-                    font-size: 0.6rem;
-                    font-weight: bold;
-                    padding: 3px 8px;
-                    border-radius: 12px;
-                    z-index: 2;
-                    animation: pulse-red 1.5s infinite;
-                    box-shadow: 0px 2px 5px rgba(0,0,0,0.5);
+                    position: absolute; top: 8px; right: 8px; background-color: #ef4444; color: white;
+                    font-size: 0.6rem; font-weight: bold; padding: 3px 8px; border-radius: 12px; z-index: 2;
+                    animation: pulse-red 1.5s infinite; box-shadow: 0px 2px 5px rgba(0,0,0,0.5);
+                    display: none; /* Se activa con Javascript al sonar el audio */
                 }}
             </style>
             
-            <!-- Inyección de la estructura HTML Flotante -->
-            <div class="floating-pip">
-                <div class="live-badge">🔴 LIVE</div>
-                <img src="{URL_AVATAR_TUTOR}">
+            <div class="floating-pip" id="pip-container">
+                <div class="live-badge" id="live-badge-ui">🔴 LIVE</div>
+                <img id="tutor-avatar-ui" src="{URL_AVATAR_SILENCIO}">
             </div>
             """, unsafe_allow_html=True)
 
-        # Botones de navegación (Visualización limpia y normal para ambos modos)
         col_back, col_title = st.columns([1, 4])
         with col_back:
             if st.button("⬅️ Salir", use_container_width=True):
@@ -448,9 +420,41 @@ else:
                         else:
                             st.markdown(mensaje["content"])
                             
+                    # ========================================================
+                    # REPRODUCTOR DE AUDIO HTML5 + JS (SINCRONIZA EL AVATAR)
+                    # ========================================================
                     if mensaje.get("audio_bytes"):
                         es_el_ultimo = (index == len(st.session_state.mensajes) - 1)
-                        st.audio(mensaje["audio_bytes"], format="audio/mp3", autoplay=es_el_ultimo)
+                        b64_audio = base64.b64encode(mensaje["audio_bytes"]).decode()
+                        
+                        # Inyectamos un reproductor de audio personalizado.
+                        # El script busca la ventana flotante y le cambia la imagen dependiendo si suena o no.
+                        codigo_reproductor_inteligente = f"""
+                        <audio id="audio-{index}" controls {"autoplay" if es_el_ultimo else ""} style="width: 100%; height: 45px; outline: none; border-radius: 10px;">
+                            <source src="data:audio/mp3;base64,{b64_audio}" type="audio/mp3">
+                        </audio>
+                        <script>
+                            (function() {{
+                                const audio = document.getElementById('audio-{index}');
+                                const parentDoc = window.parent.document;
+                                const avatar = parentDoc.getElementById('tutor-avatar-ui');
+                                const badge = parentDoc.getElementById('live-badge-ui');
+                                
+                                if (avatar && audio) {{
+                                    audio.onplay = () => {{
+                                        avatar.src = "{URL_AVATAR_HABLANDO}";
+                                        if (badge) badge.style.display = 'block';
+                                    }};
+                                    audio.onended = () => {{
+                                        avatar.src = "{URL_AVATAR_SILENCIO}";
+                                        if (badge) badge.style.display = 'none';
+                                    }};
+                                    audio.onpause = audio.onended;
+                                }}
+                            }})();
+                        </script>
+                        """
+                        components.html(codigo_reproductor_inteligente, height=60)
 
             col_doc, col_voz = st.columns([1, 1])
             with col_doc:
