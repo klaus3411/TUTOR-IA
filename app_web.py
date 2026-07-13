@@ -11,7 +11,7 @@ import streamlit.components.v1 as components
 
 # --- CONFIGURACIÓN DEL AVATAR DEL TUTOR ---
 # Pon aquí una imagen PNG/JPG estática para cuando esté callado
-URL_AVATAR_SILENCIO = "https://drive.google.com/file/d/1j-mH5DSI-dI2n_DE3-mdJBroGTYwfbSK/view?usp=sharing" 
+URL_AVATAR_SILENCIO = "https://i.postimg.cc/G34B6VHc/Screenshot-2026-07-12-222833.png" 
 # Pon aquí el GIF animado para cuando esté hablando (Te dejé un robot genérico)
 URL_AVATAR_HABLANDO = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExYzdyMXgweTl2bXN3MnludzM1bmYwdDBhamUwMDJ1ZHRueHBjOTBzdSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/50y1taalZqPYQdW2YG/giphy.gif" 
 
