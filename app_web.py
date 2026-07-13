@@ -10,7 +10,7 @@ from sentence_transformers import SentenceTransformer
 import streamlit.components.v1 as components
 
 # --- AVATAR DEL TUTOR PARA LA VENTANA FLOTANTE ---
-URL_AVATAR_TUTOR = "https://i.pinimg.com/originals/a1/bb/16/a1bb16dc8cda38148b1d624a9cb57b7f.gif" 
+URL_AVATAR_TUTOR = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExYzdyMXgweTl2bXN3MnludzM1bmYwdDBhamUwMDJ1ZHRueHBjOTBzdSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/50y1taalZqPYQdW2YG/giphy.gif" 
 
 # --- LIBRERÍAS OPCIONALES (PDF y VOZ) ---
 try:
