@@ -9,6 +9,9 @@ from groq import Groq
 from sentence_transformers import SentenceTransformer
 import streamlit.components.v1 as components
 
+# --- CONFIGURACIÓN DE AVATAR (VIDEOLLAMADA) ---
+URL_AVATAR_TUTOR = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExYzdyMXgweTl2bXN3MnludzM1bmYwdDBhamUwMDJ1ZHRueHBjOTBzdSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/50y1taalZqPYQdW2YG/giphy.gif" 
+
 # --- LIBRERÍAS OPCIONALES (PDF y VOZ) ---
 try:
     from pypdf import PdfReader
@@ -32,6 +35,36 @@ st.markdown("""
 <style>
     [data-testid="stSidebar"] {display: none !important;}
     [data-testid="collapsedControl"] {display: none !important;}
+    /* Diseño del marco de videollamada */
+    .video-call-frame {
+        width: 100%;
+        background: #000;
+        border-radius: 15px;
+        overflow: hidden;
+        position: relative;
+        border: 3px solid #333;
+        text-align: center;
+        margin-bottom: 20px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+    }
+    .live-indicator {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: #e81c4f;
+        color: white;
+        padding: 4px 10px;
+        border-radius: 5px;
+        font-size: 0.75rem;
+        font-weight: bold;
+        letter-spacing: 1px;
+        animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.5; }
+        100% { opacity: 1; }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -45,6 +78,28 @@ MEDALLAS_MAESTRAS = {
     "audiofilo": {"titulo": "Audiófilo", "icono": "🎙️", "desc": "Completaste una tutoría interactuando por voz."},
     "investigador": {"titulo": "Investigador", "icono": "📂", "desc": "Sustentaste tus tareas con archivos PDF o imágenes."}
 }
+
+# ==========================================
+# 1.5 INYECCIÓN PWA (App Instalable)
+# ==========================================
+components.html("""
+<script>
+    try {
+        const parentDoc = window.parent.document;
+        const parentWin = window.parent;
+        const manifest = {
+            "name": "Portal Educativo IA", "short_name": "Portal IA", "theme_color": "#1E3A8A", "background_color": "#F3F4F6",
+            "display": "standalone", "orientation": "portrait", "scope": "/", "start_url": "/",
+            "icons": [{"src": "https://cdn-icons-png.flaticon.com/512/167/167707.png", "sizes": "512x512", "type": "image/png"}]
+        };
+        const blob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
+        const manifestURL = URL.createObjectURL(blob);
+        const oldLink = parentDoc.querySelector('link[rel="manifest"]');
+        if(oldLink) oldLink.remove();
+        parentDoc.head.insertAdjacentHTML('beforeend', `<link rel="manifest" href="${manifestURL}">`);
+    } catch (e) {}
+</script>
+""", height=0)
 
 # ==========================================
 # 2. CARGA DE SISTEMAS EN MEMORIA
@@ -287,19 +342,17 @@ else:
                 st.error("Error al cargar las tutorías.")
 
         # ------------------------------------------
-        # PESTAÑA 2: MI RENDIMIENTO (NUEVO)
+        # PESTAÑA 2: MI RENDIMIENTO
         # ------------------------------------------
         with tab_rendimiento:
             st.markdown("#### 📈 Resumen de tu Desempeño")
             try:
-                # Extraemos todas las evaluaciones del estudiante actual
                 res_eval = supabase.table("evaluaciones").select("*").eq("estudiante_id", perfil_actual['id']).order("created_at", desc=True).execute()
                 historial_evaluaciones = res_eval.data
                 
                 if not historial_evaluaciones:
                     st.info("Aún no tienes calificaciones registradas. ¡Completa tu primera misión para ver tus notas aquí!")
                 else:
-                    # Cálculos rápidos de estadísticas
                     total_misiones = len(historial_evaluaciones)
                     promedio = sum(item['nota'] for item in historial_evaluaciones) / total_misiones
                     
@@ -322,12 +375,9 @@ else:
                     st.divider()
                     st.markdown("#### 📖 Historial de Actividades")
                     
-                    # Generamos una lista desplegable por cada evaluación
                     for evaluacion in historial_evaluaciones:
                         fecha_corta = evaluacion['created_at'][:10]
                         nota = evaluacion['nota']
-                        
-                        # Indicador visual semafórico para la nota
                         color_nota = "🟢" if nota >= 85 else "🟡" if nota >= 60 else "🔴"
                         
                         with st.expander(f"{color_nota} {fecha_corta} | {evaluacion['tarea']} - Nota: {nota}/100"):
@@ -343,6 +393,14 @@ else:
         tutoria_actual = st.session_state['tutoria_activa']
         modo_voz_activado = tutoria_actual.get('modo_voz', False)
         
+        # --- MARCO DE VIDEOCONFERENCIA (AVATAR) ---
+        st.markdown(f"""
+        <div class="video-call-frame">
+            <div class="live-indicator">● LIVE</div>
+            <img src="{URL_AVATAR_TUTOR}" style="width: 100%; height: 200px; object-fit: cover;">
+        </div>
+        """, unsafe_allow_html=True)
+        
         if st.button("⬅️ Volver a mis misiones", use_container_width=False):
             del st.session_state['tutoria_activa']
             if 'resultado_evaluacion' in st.session_state: del st.session_state['resultado_evaluacion']
@@ -353,6 +411,7 @@ else:
             st.info("🎙️ **Modo Conversación Activado:** La IA te responderá con voz hablada en esta misión.")
 
         if 'resultado_evaluacion' not in st.session_state:
+            # Dibujando historial de mensajes
             for index, mensaje in enumerate(st.session_state.mensajes):
                 avatar_icon = "🧑‍🎓" if mensaje["role"] == "user" else URL_LOGO_COLEGIO
                 with st.chat_message(mensaje["role"], avatar=avatar_icon):
@@ -437,6 +496,15 @@ else:
 
                 if pregunta_voz:
                     st.session_state['voz_utilizada_en_mision'] = True
+
+                with st.chat_message("user", avatar="🧑‍🎓"):
+                    st.markdown(pregunta)
+                    if archivo_subido is not None:
+                        if archivo_subido.type.startswith("image/"):
+                            st.image(archivo_subido, width=350)
+                        elif archivo_subido.type == "application/pdf" and texto_pdf_extraido:
+                            with st.expander("📄 Documento PDF Adjunto (Texto Extraído)"):
+                                st.text(texto_pdf_extraido)
 
                 with st.chat_message("assistant", avatar=URL_LOGO_COLEGIO):
                     with st.spinner("Pensando..."):
