@@ -9,8 +9,8 @@ from groq import Groq
 from sentence_transformers import SentenceTransformer
 import streamlit.components.v1 as components
 
-# --- FONDO DE VIDEOLLAMADA (GIF SEGURO Y CONFIABLE) ---
-URL_FONDO_VIDEOLLAMADA = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExYzdyMXgweTl2bXN3MnludzM1bmYwdDBhamUwMDJ1ZHRueHBjOTBzdSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/50y1taalZqPYQdW2YG/giphy.gif" 
+# --- AVATAR DEL TUTOR PARA LA VENTANA FLOTANTE ---
+URL_AVATAR_TUTOR = "https://i.pinimg.com/originals/a1/bb/16/a1bb16dc8cda38148b1d624a9cb57b7f.gif" 
 
 # --- LIBRERÍAS OPCIONALES (PDF y VOZ) ---
 try:
@@ -352,138 +352,79 @@ else:
         modo_voz_activado = tutoria_actual.get('modo_voz', False)
         
         # ========================================================
-        # MAGIA VISUAL: CSS PARA PANTALLA COMPLETA ESTILO WHATSAPP
+        # MAGIA VISUAL: VENTANA FLOTANTE DE VIDEOLLAMADA (PIP)
         # ========================================================
         if modo_voz_activado:
             st.markdown(f"""
             <style>
-                /* 1. Fondo GIF a pantalla completa */
-                .stApp {{
-                    background: url("{URL_FONDO_VIDEOLLAMADA}") no-repeat center center fixed !important;
-                    background-size: cover !important;
+                /* Animación de titilar para el botón LIVE */
+                @keyframes pulse-red {{
+                    0% {{ opacity: 1; }}
+                    50% {{ opacity: 0.3; }}
+                    100% {{ opacity: 1; }}
                 }}
-
-                /* 2. Quitar fondos blancos de Streamlit (Transparencia Total) */
-                [data-testid="stAppViewContainer"], 
-                [data-testid="stHeader"], 
-                [data-testid="block-container"] {{
-                    background: transparent !important;
+                /* Animación de flotación suave para la ventana */
+                @keyframes float-window {{
+                    0% {{ transform: translateY(0px); }}
+                    50% {{ transform: translateY(-8px); }}
+                    100% {{ transform: translateY(0px); }}
                 }}
                 
-                /* Eliminar la enorme barra blanca del fondo donde se escribe */
-                [data-testid="stBottomBlockContainer"], 
-                [data-testid="stBottom"] {{
-                    background: transparent !important;
-                }}
-
-                /* 3. El Efecto Gradiente: Oscurece solo de la mitad hacia abajo para leer el chat */
-                .stApp::after {{
-                    content: "";
+                /* La Ventana Flotante (Picture-in-Picture) */
+                .floating-pip {{
                     position: fixed;
-                    bottom: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 60vh;
-                    background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.6) 50%, transparent 100%);
-                    z-index: 0;
-                    pointer-events: none;
-                }}
-
-                /* Asegurar que el contenido del chat quede por encima del gradiente */
-                .stApp > header, .stApp > div {{
-                    z-index: 1;
-                    position: relative;
-                }}
-
-                /* 4. Burbujas de chat estilo WhatsApp (Más pequeñas y alineadas) */
-                [data-testid="stChatMessage"] {{
-                    background-color: rgba(0, 0, 0, 0.45) !important;
-                    backdrop-filter: blur(10px) !important;
-                    -webkit-backdrop-filter: blur(10px) !important;
-                    border-radius: 20px !important;
-                    padding: 12px 18px !important;
-                    margin-bottom: 15px !important;
-                    border: 1px solid rgba(255,255,255,0.15) !important;
-                    box-shadow: 0 4px 6px rgba(0,0,0,0.2) !important;
-                    max-width: 85% !important; /* No ocupa todo el ancho */
-                    width: fit-content !important;
+                    top: 80px;
+                    right: 20px;
+                    width: 130px;
+                    height: 180px;
+                    border-radius: 16px;
+                    box-shadow: 0px 10px 30px rgba(0,0,0,0.3);
+                    border: 3px solid #4F46E5;
+                    z-index: 999999; /* Asegura que siempre esté por encima de todo */
+                    overflow: hidden;
+                    background-color: #000;
+                    animation: float-window 4s ease-in-out infinite;
                 }}
                 
-                /* Alinear mensajes del ESTUDIANTE a la DERECHA con color azul tipo iMessage */
-                [data-testid="stChatMessage"]:has(div:contains("🧑‍🎓")) {{
-                    margin-left: auto !important;
-                    background-color: rgba(37, 99, 235, 0.45) !important;
+                /* El Video/GIF que va dentro de la ventana flotante */
+                .floating-pip img {{
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
                 }}
-
-                /* Ocultar iconos gigantes predeterminados de Streamlit */
-                [data-testid="stChatMessage"] [data-testid="stChatAvatar"] {{
-                    display: none !important;
-                }}
-
-                /* Forzar todo el texto a blanco */
-                [data-testid="stChatMessage"] p, 
-                [data-testid="stChatMessage"] span, 
-                [data-testid="stChatMessage"] div {{
-                    color: #FFFFFF !important;
-                }}
-
-                /* 5. Controles (Input y Acordeones) - Cristal Oscuro */
-                [data-testid="stChatInput"] {{
-                    background-color: rgba(0, 0, 0, 0.6) !important;
-                    backdrop-filter: blur(12px) !important;
-                    border: 1px solid rgba(255,255,255,0.2) !important;
-                    border-radius: 25px !important;
-                }}
-                [data-testid="stChatInput"] textarea {{
-                    color: white !important;
-                }}
-
-                [data-testid="stExpander"] {{
-                    background-color: rgba(0, 0, 0, 0.6) !important;
-                    backdrop-filter: blur(10px) !important;
-                    border-radius: 15px !important;
-                    border: 1px solid rgba(255,255,255,0.2) !important;
-                }}
-                [data-testid="stExpander"] * {{
-                    color: white !important;
-                }}
-
-                /* 6. Barra Superior de "Llamada Activa" */
-                .top-call-bar {{
-                    background: rgba(0,0,0,0.5); 
-                    padding: 8px 15px; 
-                    border-radius: 20px; 
-                    display: inline-block; 
-                    backdrop-filter: blur(8px); 
-                    border: 1px solid rgba(255,255,255,0.2);
+                
+                /* El botoncito LIVE rojo en la ventana flotante */
+                .live-badge {{
+                    position: absolute;
+                    top: 8px;
+                    right: 8px;
+                    background-color: #ef4444;
+                    color: white;
+                    font-size: 0.6rem;
+                    font-weight: bold;
+                    padding: 3px 8px;
+                    border-radius: 12px;
+                    z-index: 2;
+                    animation: pulse-red 1.5s infinite;
+                    box-shadow: 0px 2px 5px rgba(0,0,0,0.5);
                 }}
             </style>
-            """, unsafe_allow_html=True)
             
-            # Botones de navegación superior
-            col_back, col_title = st.columns([1, 4])
-            with col_back:
-                if st.button("⬅️ Salir", use_container_width=True):
-                    del st.session_state['tutoria_activa']
-                    if 'resultado_evaluacion' in st.session_state: del st.session_state['resultado_evaluacion']
-                    st.rerun()
-            with col_title:
-                st.markdown(f"""
-                <div class="top-call-bar">
-                    <h5 style="color: white; margin: 0;">🔴 LIVE | {tutoria_actual['asignatura']}</h5>
-                </div>
-                """, unsafe_allow_html=True)
+            <!-- Inyección de la estructura HTML Flotante -->
+            <div class="floating-pip">
+                <div class="live-badge">🔴 LIVE</div>
+                <img src="{URL_AVATAR_TUTOR}">
+            </div>
+            """, unsafe_allow_html=True)
 
-            # --- ESPACIADOR VITAL --- 
-            # Esto empuja los mensajes hacia abajo para que NO tapen la cara del avatar
-            st.markdown("<div style='height: 35vh;'></div>", unsafe_allow_html=True)
-                
-        else:
-            # INTERFAZ TRADICIONAL (Sin CSS inmersivo)
-            if st.button("⬅️ Volver a mis misiones", use_container_width=False):
+        # Botones de navegación (Visualización limpia y normal para ambos modos)
+        col_back, col_title = st.columns([1, 4])
+        with col_back:
+            if st.button("⬅️ Salir", use_container_width=True):
                 del st.session_state['tutoria_activa']
                 if 'resultado_evaluacion' in st.session_state: del st.session_state['resultado_evaluacion']
                 st.rerun()
+        with col_title:
             st.success(f"🎯 **{tutoria_actual['asignatura']}:** {tutoria_actual['mision']}")
 
 
@@ -491,9 +432,6 @@ else:
             for index, mensaje in enumerate(st.session_state.mensajes):
                 avatar_icon = "🧑‍🎓" if mensaje["role"] == "user" else URL_LOGO_COLEGIO
                 with st.chat_message(mensaje["role"], avatar=avatar_icon):
-                    # Agregamos etiqueta oculta para que CSS reconozca de quién es el mensaje y lo alinee
-                    st.markdown(f"<div style='display:none;'>{avatar_icon}</div>", unsafe_allow_html=True)
-                    
                     if isinstance(mensaje["content"], list):
                         for item in mensaje["content"]:
                             if item["type"] == "text":
@@ -524,15 +462,14 @@ else:
             with col_voz:
                 with st.expander("🎙️ Enviar nota de voz"):
                     if VOZ_DISPONIBLE:
-                        color_texto = "white" if modo_voz_activado else "black"
-                        st.markdown(f"<p style='font-size:0.8rem; text-align:center; color:{color_texto};'>Usa la grabadora a continuación para hablar.</p>", unsafe_allow_html=True)
+                        st.markdown(f"<p style='font-size:0.8rem; text-align:center;'>Usa la grabadora a continuación para hablar.</p>", unsafe_allow_html=True)
                         grabacion = st.audio_input("Graba tu mensaje", label_visibility="collapsed")
                         
                         if grabacion is not None:
                             audio_bytes = grabacion.getvalue()
                             if audio_bytes != st.session_state.get('ultimo_audio'):
                                 st.session_state['ultimo_audio'] = audio_bytes
-                                st.markdown(f"<p style='color:{color_texto}; text-align:center;'>⏳ Escuchando tu nota de voz...</p>", unsafe_allow_html=True)
+                                st.markdown(f"<p style='text-align:center;'>⏳ Escuchando tu nota de voz...</p>", unsafe_allow_html=True)
                                 texto_voz = transcribir_audio(audio_bytes)
                                 st.session_state['mensaje_voz_pendiente'] = texto_voz
                                 st.rerun() 
@@ -578,8 +515,7 @@ else:
                     st.session_state['voz_utilizada_en_mision'] = True
 
                 with st.chat_message("assistant", avatar=URL_LOGO_COLEGIO):
-                    color_texto = "white" if modo_voz_activado else "black"
-                    st.markdown(f"<div style='display:none;'>🤖</div><p style='color:{color_texto};'>Pensando...</p>", unsafe_allow_html=True)
+                    st.markdown(f"<p>Pensando...</p>", unsafe_allow_html=True)
                     
                     respuesta = generar_respuesta(perfil_actual, tutoria_actual, pregunta, st.session_state.mensajes)
                     
