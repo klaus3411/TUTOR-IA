@@ -27,7 +27,7 @@ try:
 except ImportError:
     VOZ_DISPONIBLE = False
 
-st.set_page_config(page_title="Portal Educativo", page_icon="🏫", layout="centered")
+st.set_page_config(page_title="Portal Educativo - Gimnasio Bilingüe Altamar de Cartagena", page_icon="🏫", layout="centered")
 
 st.markdown("""
 <style>
@@ -39,7 +39,7 @@ st.markdown("""
 URL_LOGO_COLEGIO = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSE3X0xDak4bCBuDN64-J9RuKK8l6BrFgnfPFhrSxTT6uaPc5yEaGm77Su6&s=10" 
 
 MEDALLAS_MAESTRAS = {
-    "primera_mision": {"titulo": "Primer Paso", "icono": "🥉", "desc": "Completaste tu primera tutoría MHT con éxito."},
+    "primera_mision": {"titulo": "Primer Paso", "icono": "🥉", "desc": "Completaste tu primera tutoría con éxito."},
     "mente_brillante": {"titulo": "Mente Brillante", "icono": "🥈", "desc": "Obtuviste una calificación de 85 o más puntos."},
     "perfeccion": {"titulo": "Perfección", "icono": "🥇", "desc": "Alcanzaste la excelencia absoluta de 100/100."},
     "audiofilo": {"titulo": "Audiófilo", "icono": "🎙️", "desc": "Completaste una tutoría interactuando por voz."},
@@ -195,7 +195,6 @@ INSTRUCCIONES DE COMPORTAMIENTO:
 
     mensajes_api = [{"role": "system", "content": f"{instrucciones}\n\nMATERIAL DE APOYO OFICIAL:\n{texto_oficial}"}]
     
-    # Manejo de primer mensaje si el historial está vacío (saludo inicial del tutor)
     if not historial_mensajes:
         mensajes_api.append({"role": "system", "content": "Genera el saludo inicial aplicando el MHT."})
     else:
@@ -217,7 +216,7 @@ if not st.session_state.get('usuario_valido', False):
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.markdown(f"<div style='text-align: center;'><img src='{URL_LOGO_COLEGIO}' width='150' style='border-radius: 50%;'></div>", unsafe_allow_html=True)
-        st.markdown("<h2 style='text-align: center;'>Portal Educativo MHT</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center;'>Portal Educativo</h2>", unsafe_allow_html=True)
         
         with st.form("login_form"):
             correo_input = st.text_input("✉️ Correo Institucional:")
@@ -255,7 +254,7 @@ else:
                 res_med_db = supabase.table("medallas_ganadas").select("medalla_clave").eq("estudiante_id", perfil_actual['id']).execute()
                 claves_ganadas = [registro['medalla_clave'] for registro in res_med_db.data] if res_med_db.data else []
                 
-                st.markdown("#### 🏆 Tus Logros MHT")
+                st.markdown("#### 🏆 Tus Logros Académicos")
                 columnas_medallas = st.columns(len(MEDALLAS_MAESTRAS))
                 for index, (clave, metadatos) in enumerate(MEDALLAS_MAESTRAS.items()):
                     with columnas_medallas[index]:
@@ -290,7 +289,6 @@ else:
                     for tutoria in tutorias_pendientes:
                         with st.container():
                             icono_voz = " 🎙️ (Misión con Voz)" if tutoria.get('modo_voz', False) else ""
-                            # Mostrar el Momento Pedagógico de la misión
                             momento_badge = f"<span style='background:#e0e7ff; color:#3730a3; padding:3px 8px; border-radius:12px; font-size:0.7rem;'>Fase: {tutoria.get('momento_pedagogico', 'General')}</span>"
                             
                             st.markdown(f"""
@@ -302,9 +300,7 @@ else:
                             """, unsafe_allow_html=True)
                             if st.button(f"Entrar a tutoría de {tutoria['asignatura']}", key=tutoria['id'], type="primary"):
                                 st.session_state['tutoria_activa'] = tutoria
-                                
-                                # Primer mensaje adaptativo MHT
-                                primer_msg = f"¡Hola, {perfil_actual['nombre']}! Soy tu Tutor MHT. Hoy trabajaremos en la fase de **{tutoria.get('momento_pedagogico', 'General')}**. Tu misión es: *{tutoria['mision']}*. ¿Comenzamos?"
+                                primer_msg = f"¡Hola, {perfil_actual['nombre']}! Soy tu Tutor. Hoy trabajaremos en la fase de **{tutoria.get('momento_pedagogico', 'General')}**. Tu misión es: *{tutoria['mision']}*. ¿Comenzamos?"
                                 st.session_state['mensajes'] = [{"role": "assistant", "content": primer_msg}]
                                 st.rerun()
             except Exception as e:
@@ -358,7 +354,6 @@ else:
         tutoria_actual = st.session_state['tutoria_activa']
         modo_voz_activado = tutoria_actual.get('modo_voz', False)
         
-        # MAGIA VISUAL PIP (Mantenida igual)
         if modo_voz_activado:
             st.markdown(f"""
             <style>
@@ -381,7 +376,7 @@ else:
                 if 'resultado_evaluacion' in st.session_state: del st.session_state['resultado_evaluacion']
                 st.rerun()
         with col_title:
-            st.success(f"🎯 **{tutoria_actual['asignatura']} | Fase MHT: {tutoria_actual.get('momento_pedagogico', 'General')}**")
+            st.success(f"🎯 **{tutoria_actual['asignatura']} | Fase: {tutoria_actual.get('momento_pedagogico', 'General')}**")
 
         if 'resultado_evaluacion' not in st.session_state:
             for index, mensaje in enumerate(st.session_state.mensajes):
@@ -535,7 +530,7 @@ else:
                             
                             supabase.table("tutorias").update({"estado": "completada"}).eq("id", tutoria_actual['id']).execute()
                             
-                            # GAMIFICACIÓN MHT
+                            # GAMIFICACIÓN
                             medallas_desbloqueadas_ahora = []
                             if otorgar_medalla_logica(perfil_actual['id'], "primera_mision"): medallas_desbloqueadas_ahora.append("primera_mision")
                             if datos_evaluacion['nota'] >= 85: 
@@ -557,7 +552,7 @@ else:
             datos = st.session_state['resultado_evaluacion']
             st.markdown("### 📊 Actividad Completada")
             st.markdown(f"<h1 style='text-align: center; color: green;'>{datos['nota']}/100</h1>", unsafe_allow_html=True)
-            st.info(f"**🗣️ Comentario del Tutor MHT:**\n{datos['feedback']}")
+            st.info(f"**🗣️ Comentario del Tutor:**\n{datos['feedback']}")
             
             if 'nuevas_medallas' in st.session_state:
                 st.balloons() 
