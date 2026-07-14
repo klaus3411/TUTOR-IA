@@ -182,6 +182,14 @@ with tab_cargador:
     with st.form("form_nueva_clase"):
         tema_input = st.text_input("Tema Principal (Ej: Ciencias Naturales)")
         subtema_input = st.text_input("Subtema (Ej: El Sistema Solar)")
+        # --- NUEVO: SELECTOR DE MOMENTO PEDAGÓGICO MHT ---
+        momento_input = st.selectbox("Momento Pedagógico (MHT):", [
+            "1. Identificación (Sentir y Diagnosticar)", 
+            "2. Contextualización (Pensar y Relacionar)", 
+            "3. Aplicación (Saber Hacer)", 
+            "4. Innovación (Saber Trascender y Emprender)",
+            "General / Ciclo Completo"
+        ])
         texto_clase_input = st.text_area("Apuntes Oficiales de la Clase", height=200)
         nivel_input = st.slider("Nivel de dificultad", 1, 5, 2)
         if st.form_submit_button("🧠 Guardar Clase"):
@@ -194,12 +202,13 @@ with tab_cargador:
                         vector_matematico = modelo_vectores.encode(texto_clase_input).tolist()
                         supabase.table("contenido_curricular").insert({
                             "tema": tema_input, "subtema": subtema_input,
+                            "momento_pedagogico": momento_input, # Guardamos el momento
                             "contenido_texto": texto_clase_input, "nivel_dificultad": nivel_input,
                             "embedding": vector_matematico
                         }).execute()
-                        st.success("✅ Clase asimilada correctamente.")
+                        st.success(f"✅ Clase asimilada correctamente para el momento: {momento_input}.")
                     except Exception as e:
-                        st.error(f"❌ Error: {e}")
+                        st.error(f"❌ Error al guardar. Asegúrate de haber creado la columna 'momento_pedagogico' en Supabase. Detalle: {e}")
 
 # ------------------------------------------
 # PESTAÑA 3: REGISTRO DE ESTUDIANTES
@@ -232,7 +241,7 @@ with tab_registro:
                         }).execute()
                         st.success(f"🎉 ¡Matriculado con éxito en {grado_nuevo} - {curso_nuevo}!")
                 except Exception as e:
-                    st.error(f"❌ Error al registrar. ¿Aseguraste crear la columna 'curso' en Supabase? Detalle: {e}")
+                    st.error(f"❌ Error al registrar. Detalle: {e}")
 
 # ------------------------------------------
 # PESTAÑA 4: ASIGNAR TUTORÍAS 
@@ -291,9 +300,19 @@ with tab_asignaciones:
                 st.markdown(f"### 🚀 Nueva Misión para {nombre_estudiante}")
                 with st.form("form_asignacion"):
                     asignatura = st.selectbox("Área / Asignatura:", ["Biología", "Matemáticas", "Física", "Química", "Lenguaje", "Historia", "Inglés", "Otra"])
-                    nueva_tarea = st.text_area("Instrucción o actividad (Ej: Explicar las partes de la célula):")
+                    
+                    # --- NUEVO: SELECTOR DE MOMENTO PEDAGÓGICO MHT PARA LA TUTORÍA ---
+                    momento_mision = st.selectbox("Momento Pedagógico (Enfoque de la Misión):", [
+                        "1. Identificación (Sentir y Diagnosticar)", 
+                        "2. Contextualización (Pensar y Relacionar)", 
+                        "3. Aplicación (Saber Hacer)", 
+                        "4. Innovación (Saber Trascender y Emprender)",
+                        "Ciclo Completo MHT"
+                    ])
+                    
+                    nueva_tarea = st.text_area("Instrucción o actividad (Ej: Construir un circuito eléctrico casero):")
                     nueva_complejidad = st.radio("Nivel de exigencia:", ["Básico", "Intermedio", "Avanzado"], horizontal=True)
-                    nueva_rubrica = st.text_area("Rúbrica de evaluación (Opcional):", placeholder="Ej: Restar puntos si hay mala ortografía.")
+                    nueva_rubrica = st.text_area("Rúbrica de evaluación (Opcional):", placeholder="Ej: Evaluar la creatividad y conexión con la realidad local.")
                     
                     nueva_voz = st.checkbox("🎙️ Activar charla por Voz (La IA hablará en voz alta sus respuestas)")
                     
@@ -303,16 +322,17 @@ with tab_asignaciones:
                                 supabase.table("tutorias").insert({
                                     "estudiante_id": estudiante_seleccionado, 
                                     "asignatura": asignatura, 
-                                    "mision": nueva_tarea, 
+                                    "mision": nueva_tarea,
+                                    "momento_pedagogico": momento_mision, # Guardamos el enfoque MHT
                                     "complejidad": nueva_complejidad, 
                                     "rubrica": nueva_rubrica, 
                                     "estado": "pendiente",
                                     "modo_voz": nueva_voz 
                                 }).execute()
-                                st.success(f"Tutoría de {asignatura} creada con éxito.")
+                                st.success(f"Tutoría MHT de {asignatura} creada con éxito.")
                                 st.rerun() 
                             except Exception as e:
-                                st.error(f"Error al guardar. Detalle: {e}")
+                                st.error(f"Error al guardar. Asegúrate de haber creado la columna 'momento_pedagogico' en la tabla 'tutorias'. Detalle: {e}")
                         else:
                             st.error("Debes escribir una tarea.")
             
