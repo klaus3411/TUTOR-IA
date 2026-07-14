@@ -68,7 +68,12 @@ with tab_analiticas:
 
             st.subheader("📋 Lista de Estudiantes y Cuadro de Honor")
             if not df_estudiantes.empty:
-                # Extraer todas las medallas en una sola consulta para optimizar rendimiento
+                # Manejo de estudiantes antiguos que no tenían la columna curso
+                if 'curso' not in df_estudiantes.columns:
+                    df_estudiantes['curso'] = 'N/A'
+                df_estudiantes['curso'] = df_estudiantes['curso'].fillna('N/A')
+
+                # Extraer todas las medallas
                 res_todas_medallas = supabase.table("medallas_ganadas").select("estudiante_id, medalla_clave").execute()
                 df_meds = pd.DataFrame(res_todas_medallas.data) if res_todas_medallas.data else pd.DataFrame()
                 
@@ -87,8 +92,8 @@ with tab_analiticas:
                     lambda x: " ".join(medallas_por_alumno[x]) if x in medallas_por_alumno else "Ninguna"
                 )
                 
-                df_registro = df_estudiantes[['nombre', 'correo', 'grado', 'Insignias Obtenidas']].copy()
-                df_registro.columns = ['Nombre del Alumno', 'Correo', 'Grado', 'Medallas Desbloqueadas']
+                df_registro = df_estudiantes[['nombre', 'correo', 'grado', 'curso', 'Insignias Obtenidas']].copy()
+                df_registro.columns = ['Nombre del Alumno', 'Correo', 'Grado', 'Sección', 'Medallas Desbloqueadas']
                 st.dataframe(df_registro, use_container_width=True)
             else:
                 st.info("No hay estudiantes matriculados en el sistema.")
@@ -205,7 +210,10 @@ with tab_registro:
         nombre_nuevo = st.text_input("Nombre Completo")
         correo_nuevo = st.text_input("Correo Institucional")
         grado_nuevo = st.selectbox("Grado del Estudiante", ["6to Grado", "7mo Grado", "8vo Grado", "9no Grado", "10mo Grado", "11vo Grado"])
+        # --- NUEVO SELECTOR DE CURSO/SECCIÓN ---
+        curso_nuevo = st.radio("Sección / Curso del Estudiante", ["A", "B", "Único"], horizontal=True)
         nivel_nuevo = st.slider("Nivel académico inicial", 1, 5, 2)
+        
         if st.form_submit_button("✅ Registrar Estudiante"):
             if not nombre_nuevo or not correo_nuevo:
                 st.error("⚠️ Obligatorio: Nombre y Correo.")
@@ -216,79 +224,112 @@ with tab_registro:
                         st.warning("⚠️ Correo ya registrado.")
                     else:
                         supabase.table("estudiantes").insert({
-                            "nombre": nombre_nuevo, "correo": correo_nuevo.strip().lower(), "grado": grado_nuevo, "nivel_general": nivel_nuevo
+                            "nombre": nombre_nuevo, 
+                            "correo": correo_nuevo.strip().lower(), 
+                            "grado": grado_nuevo, 
+                            "curso": curso_nuevo, # Guardamos el nuevo dato
+                            "nivel_general": nivel_nuevo
                         }).execute()
-                        st.success(f"🎉 ¡Matriculado con éxito!")
+                        st.success(f"🎉 ¡Matriculado con éxito en {grado_nuevo} - {curso_nuevo}!")
                 except Exception as e:
-                    st.error(f"❌ Error: {e}")
+                    st.error(f"❌ Error al registrar. ¿Aseguraste crear la columna 'curso' en Supabase? Detalle: {e}")
 
 # ------------------------------------------
 # PESTAÑA 4: ASIGNAR TUTORÍAS 
 # ------------------------------------------
 with tab_asignaciones:
     st.subheader("🎯 Panel de Control de Tutorías")
-    st.markdown("Selecciona un alumno para ver sus tareas pendientes y asignarle nuevas misiones.")
+    st.markdown("Filtra y selecciona un alumno para ver sus tareas pendientes y asignarle nuevas misiones.")
     
-    res_lista = supabase.table("estudiantes").select("id, nombre").execute()
+    res_lista = supabase.table("estudiantes").select("id, nombre, grado, curso").execute()
     df_lista = pd.DataFrame(res_lista.data)
     
     if df_lista.empty:
         st.warning("No hay estudiantes registrados aún.")
     else:
-        estudiante_seleccionado = st.selectbox(
-            "👤 Selecciona al alumno:", 
-            options=df_lista['id'], 
-            format_func=lambda x: df_lista[df_lista['id'] == x]['nombre'].values[0]
-        )
+        # Prevenir errores con alumnos viejos sin curso asignado
+        if 'curso' not in df_lista.columns:
+            df_lista['curso'] = 'N/A'
+        df_lista['curso'] = df_lista['curso'].fillna('N/A')
+
+        # --- NUEVO MOTOR DE FILTROS DINÁMICO ---
+        st.markdown("""<div style='background-color: #f8fafc; padding: 15px; border-radius: 10px; border: 1px solid #e2e8f0; margin-bottom: 20px;'>""", unsafe_allow_html=True)
+        st.markdown("##### 🔎 Filtros de Búsqueda")
+        col_filtro_g, col_filtro_c = st.columns(2)
         
-        nombre_estudiante = df_lista[df_lista['id'] == estudiante_seleccionado]['nombre'].values[0]
-        st.divider()
-        
-        col_form, col_pendientes = st.columns([1, 1], gap="large")
-        
-        with col_form:
-            st.markdown(f"### 🚀 Nueva Misión para {nombre_estudiante}")
-            with st.form("form_asignacion"):
-                asignatura = st.selectbox("Área / Asignatura:", ["Biología", "Matemáticas", "Física", "Química", "Lenguaje", "Historia", "Inglés", "Otra"])
-                nueva_tarea = st.text_area("Instrucción o actividad (Ej: Explicar las partes de la célula):")
-                nueva_complejidad = st.radio("Nivel de exigencia:", ["Básico", "Intermedio", "Avanzado"], horizontal=True)
-                nueva_rubrica = st.text_area("Rúbrica de evaluación (Opcional):", placeholder="Ej: Restar puntos si hay mala ortografía.")
-                
-                nueva_voz = st.checkbox("🎙️ Activar charla por Voz (La IA hablará en voz alta sus respuestas)")
-                
-                if st.form_submit_button("✅ Crear y Asignar Tutoría", type="primary"):
-                    if nueva_tarea:
-                        try:
-                            supabase.table("tutorias").insert({
-                                "estudiante_id": estudiante_seleccionado, 
-                                "asignatura": asignatura, 
-                                "mision": nueva_tarea, 
-                                "complejidad": nueva_complejidad, 
-                                "rubrica": nueva_rubrica, 
-                                "estado": "pendiente",
-                                "modo_voz": nueva_voz 
-                            }).execute()
-                            st.success(f"Tutoría de {asignatura} creada con éxito.")
-                            st.rerun() 
-                        except Exception as e:
-                            st.error(f"Error al guardar. Detalle: {e}")
-                    else:
-                        st.error("Debes escribir una tarea.")
-        
-        with col_pendientes:
-            st.markdown(f"### 📋 Misiones Pendientes")
-            try:
-                res_tutorias = supabase.table("tutorias").select("*").eq("estudiante_id", estudiante_seleccionado).eq("estado", "pendiente").order("created_at", desc=True).execute()
-                
-                if not res_tutorias.data:
-                    st.info(f"¡Excelente! **{nombre_estudiante}** está al día y no tiene tutorías pendientes.")
-                else:
-                    df_tut = pd.DataFrame(res_tutorias.data)
-                    df_tut['Tipo'] = df_tut.get('modo_voz', pd.Series([False]*len(df_tut))).apply(lambda x: "🎙️ Voz" if x else "✍️ Texto")
+        with col_filtro_g:
+            grados_unicos = ["Todos"] + sorted(df_lista['grado'].dropna().unique().tolist())
+            filtro_grado = st.selectbox("Filtrar por Grado:", grados_unicos)
+            
+        with col_filtro_c:
+            cursos_unicos = ["Todos", "A", "B", "Único", "N/A"]
+            filtro_curso = st.selectbox("Filtrar por Sección:", [c for c in cursos_unicos if c == "Todos" or c in df_lista['curso'].unique()])
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # Aplicar los filtros a la tabla
+        df_filtrado = df_lista.copy()
+        if filtro_grado != "Todos":
+            df_filtrado = df_filtrado[df_filtrado['grado'] == filtro_grado]
+        if filtro_curso != "Todos":
+            df_filtrado = df_filtrado[df_filtrado['curso'] == filtro_curso]
+
+        if df_filtrado.empty:
+            st.warning("⚠️ No hay estudiantes que coincidan con los filtros seleccionados.")
+        else:
+            estudiante_seleccionado = st.selectbox(
+                "👤 Selecciona al alumno:", 
+                options=df_filtrado['id'], 
+                format_func=lambda x: f"{df_filtrado[df_filtrado['id'] == x]['nombre'].values[0]} ({df_filtrado[df_filtrado['id'] == x]['grado'].values[0]} - {df_filtrado[df_filtrado['id'] == x]['curso'].values[0]})"
+            )
+            
+            nombre_estudiante = df_filtrado[df_filtrado['id'] == estudiante_seleccionado]['nombre'].values[0]
+            st.divider()
+            
+            col_form, col_pendientes = st.columns([1, 1], gap="large")
+            
+            with col_form:
+                st.markdown(f"### 🚀 Nueva Misión para {nombre_estudiante}")
+                with st.form("form_asignacion"):
+                    asignatura = st.selectbox("Área / Asignatura:", ["Biología", "Matemáticas", "Física", "Química", "Lenguaje", "Historia", "Inglés", "Otra"])
+                    nueva_tarea = st.text_area("Instrucción o actividad (Ej: Explicar las partes de la célula):")
+                    nueva_complejidad = st.radio("Nivel de exigencia:", ["Básico", "Intermedio", "Avanzado"], horizontal=True)
+                    nueva_rubrica = st.text_area("Rúbrica de evaluación (Opcional):", placeholder="Ej: Restar puntos si hay mala ortografía.")
                     
-                    df_tut = df_tut[['asignatura', 'mision', 'Tipo']]
-                    df_tut.columns = ['Asignatura', 'Misión Asignada', 'Modalidad']
-                    st.dataframe(df_tut, use_container_width=True, hide_index=True)
-                    st.caption(f"Total pendientes: {len(df_tut)}")
-            except Exception as e:
-                st.error(f"Error al cargar las asignaciones pendientes. Detalle: {e}")
+                    nueva_voz = st.checkbox("🎙️ Activar charla por Voz (La IA hablará en voz alta sus respuestas)")
+                    
+                    if st.form_submit_button("✅ Crear y Asignar Tutoría", type="primary"):
+                        if nueva_tarea:
+                            try:
+                                supabase.table("tutorias").insert({
+                                    "estudiante_id": estudiante_seleccionado, 
+                                    "asignatura": asignatura, 
+                                    "mision": nueva_tarea, 
+                                    "complejidad": nueva_complejidad, 
+                                    "rubrica": nueva_rubrica, 
+                                    "estado": "pendiente",
+                                    "modo_voz": nueva_voz 
+                                }).execute()
+                                st.success(f"Tutoría de {asignatura} creada con éxito.")
+                                st.rerun() 
+                            except Exception as e:
+                                st.error(f"Error al guardar. Detalle: {e}")
+                        else:
+                            st.error("Debes escribir una tarea.")
+            
+            with col_pendientes:
+                st.markdown(f"### 📋 Misiones Pendientes")
+                try:
+                    res_tutorias = supabase.table("tutorias").select("*").eq("estudiante_id", estudiante_seleccionado).eq("estado", "pendiente").order("created_at", desc=True).execute()
+                    
+                    if not res_tutorias.data:
+                        st.info(f"¡Excelente! **{nombre_estudiante}** está al día y no tiene tutorías pendientes.")
+                    else:
+                        df_tut = pd.DataFrame(res_tutorias.data)
+                        df_tut['Tipo'] = df_tut.get('modo_voz', pd.Series([False]*len(df_tut))).apply(lambda x: "🎙️ Voz" if x else "✍️ Texto")
+                        
+                        df_tut = df_tut[['asignatura', 'mision', 'Tipo']]
+                        df_tut.columns = ['Asignatura', 'Misión Asignada', 'Modalidad']
+                        st.dataframe(df_tut, use_container_width=True, hide_index=True)
+                        st.caption(f"Total pendientes: {len(df_tut)}")
+                except Exception as e:
+                    st.error(f"Error al cargar las asignaciones pendientes. Detalle: {e}")
