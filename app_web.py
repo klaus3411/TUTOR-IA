@@ -27,7 +27,7 @@ try:
 except ImportError:
     VOZ_DISPONIBLE = False
 
-st.set_page_config(page_title="Portal Educativo MHT", page_icon="🏫", layout="centered")
+st.set_page_config(page_title="Portal Educativo", page_icon="🏫", layout="centered")
 
 st.markdown("""
 <style>
