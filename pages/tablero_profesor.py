@@ -219,7 +219,6 @@ with tab_registro:
         nombre_nuevo = st.text_input("Nombre Completo")
         correo_nuevo = st.text_input("Correo Institucional")
         grado_nuevo = st.selectbox("Grado del Estudiante", ["6to Grado", "7mo Grado", "8vo Grado", "9no Grado", "10mo Grado", "11vo Grado"])
-        # --- NUEVO SELECTOR DE CURSO/SECCIÓN ---
         curso_nuevo = st.radio("Sección / Curso del Estudiante", ["A", "B", "Único"], horizontal=True)
         nivel_nuevo = st.slider("Nivel académico inicial", 1, 5, 2)
         
@@ -236,7 +235,7 @@ with tab_registro:
                             "nombre": nombre_nuevo, 
                             "correo": correo_nuevo.strip().lower(), 
                             "grado": grado_nuevo, 
-                            "curso": curso_nuevo, # Guardamos el nuevo dato
+                            "curso": curso_nuevo, 
                             "nivel_general": nivel_nuevo
                         }).execute()
                         st.success(f"🎉 ¡Matriculado con éxito en {grado_nuevo} - {curso_nuevo}!")
@@ -261,7 +260,6 @@ with tab_asignaciones:
             df_lista['curso'] = 'N/A'
         df_lista['curso'] = df_lista['curso'].fillna('N/A')
 
-        # --- NUEVO MOTOR DE FILTROS DINÁMICO ---
         st.markdown("""<div style='background-color: #f8fafc; padding: 15px; border-radius: 10px; border: 1px solid #e2e8f0; margin-bottom: 20px;'>""", unsafe_allow_html=True)
         st.markdown("##### 🔎 Filtros de Búsqueda")
         col_filtro_g, col_filtro_c = st.columns(2)
@@ -299,7 +297,12 @@ with tab_asignaciones:
             with col_form:
                 st.markdown(f"### 🚀 Nueva Misión para {nombre_estudiante}")
                 with st.form("form_asignacion"):
-                    asignatura = st.selectbox("Área / Asignatura:", ["Biología", "Matemáticas", "Física", "Química", "Lenguaje", "Historia", "Inglés", "Otra"])
+                    asignatura = st.selectbox("Área / Asignatura:", [
+                        "Lenguaje / Lectura Crítica", "Competencias Ciudadanas", "Ciencias Sociales", 
+                        "Filosofía", "Matemáticas", "Física", "Química", "Biología", "Ciencias Naturales", 
+                        "Emprendimiento Artístico", "Emprendimiento Axiológico", "Emprendimiento Tecnológico", 
+                        "English", "Social Studies", "Science", "Literacy"
+                    ])
                     
                     # --- NUEVO: SELECTOR DE MOMENTO PEDAGÓGICO MHT PARA LA TUTORÍA ---
                     momento_mision = st.selectbox("Momento Pedagógico (Enfoque de la Misión):", [
