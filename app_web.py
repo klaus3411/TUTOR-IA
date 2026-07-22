@@ -11,7 +11,7 @@ import streamlit.components.v1 as components
 
 # --- FONDO DE VIDEOLLAMADA Y AVATARES ---
 URL_FONDO_VIDEOLLAMADA = "https://i.pinimg.com/originals/a1/bb/16/a1bb16dc8cda38148b1d624a9cb57b7f.gif" 
-URL_AVATAR_SILENCIO = "https://i.postimg.cc/j5Q7VDjP/Ilustracio-n-sin-ti-tulo.png" 
+URL_AVATAR_SILENCIO = "https://i.postimg.cc/1zWzDD4z/Ilustracio-n-sin-ti-tulo.jpg" 
 URL_AVATAR_HABLANDO = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExb2psM3c5NmNsejJidWRldzd1MzNuMjNlaGpteXlhOThlNWY0aWxrNSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/gSov87k6n2tITSpWgJ/giphy.gif" 
 
 try:
