@@ -8,6 +8,7 @@ from supabase import create_client, Client
 from groq import Groq
 from sentence_transformers import SentenceTransformer
 import streamlit.components.v1 as components
+import mercadopago
 
 # --- FONDO DE VIDEOLLAMADA Y AVATARES ---
 URL_FONDO_VIDEOLLAMADA = "https://i.pinimg.com/originals/a1/bb/16/a1bb16dc8cda38148b1d624a9cb57b7f.gif" 
@@ -207,6 +208,75 @@ INSTRUCCIONES DE COMPORTAMIENTO:
         temperature=0.7
     )
     return respuesta_ia.choices[0].message.content
+    # ====== 3. MÓDULO DE PAGOS (MERCADO PAGO) ======
+def crear_link_de_pago(estudiante_email, monto=80000, plan_nombre="Suscripción Tutor IA - NOVA"):
+    """Genera una preferencia de cobro por $80.000 COP."""
+    token = st.secrets.get("MERCADOPAGO_ACCESS_TOKEN", os.getenv("MERCADOPAGO_ACCESS_TOKEN"))
+    sdk = mercadopago.SDK(token)
+
+    preference_data = {
+        "items": [
+            {
+                "title": plan_nombre,
+                "quantity": 1,
+                "currency_id": "COP",
+                "unit_price": float(monto)
+            }
+        ],
+        "payer": {
+            "email": estudiante_email
+        },
+        "back_urls": {
+            "success": "https://tutor-ia-6sfonzsurtvkg9cfd4ecag.streamlit.app/?pago=exitoso",
+            "failure": "https://tutor-ia-6sfonzsurtvkg9cfd4ecag.streamlit.app/?pago=fallido",
+            "pending": "https://tutor-ia-6sfonzsurtvkg9cfd4ecag.streamlit.app/?pago=pendiente"
+        },
+        "auto_return": "approved",
+    }
+
+    try:
+        preference_response = sdk.preference().create(preference_data)
+        return preference_response["response"]["init_point"]
+    except Exception as e:
+        raise Exception(f"Fallo al comunicarse con Mercado Pago: {e}")
+
+def mostrar_interfaz_pago(email):
+    """Muro de pago para estudiantes sin suscripción activa."""
+    st.title("💳 Inscripción a NOVA Educación")
+    st.markdown("### Tu acceso al Tutor IA no está activo o ha vencido.")
+    st.write("Plan Personalizado Premium: **$80.000 COP / mes**")
+    
+    if st.button("Proceder al Pago Seguro", type="primary"):
+        try:
+            with st.spinner("Generando enlace de pago encriptado..."):
+                url_pago = crear_link_de_pago(estudiante_email=email)
+            st.success("¡Enlace generado con éxito!")
+            st.link_button("👉 Ir a Pagar Ahora (PSE, Nequi, Tarjeta)", url_pago)
+            st.info("Una vez realices el pago, notifica a tu docente o espera a que el sistema valide tu ingreso.")
+        except Exception as e:
+            st.error(f"Error de conexión con la pasarela. Detalle: {e}")
+
+# ====== 4. MÓDULO DE BASE DE DATOS (EL GUARDIÁN) ======
+def verificar_acceso_estudiante(email_estudiante):
+    """Consulta en la tabla 'estudiantes' si la columna 'suscripcion_activa' es TRUE."""
+    if not supabase:
+        return False
+    
+    try:
+        respuesta = supabase.table("estudiantes").select("suscripcion_activa").eq("email", email_estudiante).execute()
+        datos = respuesta.data
+        
+        # Si el estudiante existe en la base de datos, evaluamos su estado
+        if len(datos) > 0:
+            return datos[0].get('suscripcion_activa', False)
+        else:
+            # Si el correo no existe en la base de datos, mostramos advertencia
+            st.sidebar.warning("Este correo no está registrado en el sistema. Habla con tu docente.")
+            return False
+            
+    except Exception as e:
+        st.error(f"Error al consultar la base de datos: {e}")
+        return False
 
 # ==========================================
 # 4. INTERFAZ GRÁFICA (UI)
