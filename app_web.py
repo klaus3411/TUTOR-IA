@@ -2,18 +2,39 @@ import streamlit as st
 import os
 import json
 import base64
+import mercadopago
 import re
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from groq import Groq
 from sentence_transformers import SentenceTransformer
 import streamlit.components.v1 as components
-import mercadopago
 
-# --- FONDO DE VIDEOLLAMADA Y AVATARES ---
+# ==========================================
+# 1. CONFIGURACIÓN INICIAL (DEBE IR PRIMERO)
+# ==========================================
+st.set_page_config(page_title="Portal Educativo - Gimnasio Bilingüe Altamar de Cartagena", page_icon="🏫", layout="centered")
+
+st.markdown("""
+<style>
+    [data-testid="stSidebar"] {display: none !important;}
+    [data-testid="collapsedControl"] {display: none !important;}
+</style>
+""", unsafe_allow_html=True)
+
+# Variables globales
+URL_LOGO_COLEGIO = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSE3X0xDak4bCBuDN64-J9RuKK8l6BrFgnfPFhrSxTT6uaPc5yEaGm77Su6&s=10" 
 URL_FONDO_VIDEOLLAMADA = "https://i.pinimg.com/originals/a1/bb/16/a1bb16dc8cda38148b1d624a9cb57b7f.gif" 
-URL_AVATAR_SILENCIO = "https://i.postimg.cc/G34B6VHc/Screenshot-2026-07-12-222833.png" 
-URL_AVATAR_HABLANDO = "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExYzdyMXgweTl2bXN3MnludzM1bmYwdDBhamUwMDJ1ZHRueHBjOTBzdSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/50y1taalZqPYQdW2YG/giphy.gif" 
+URL_AVATAR_SILENCIO = "https://i.postimg.cc/1zWzDD4z/Ilustracio-n-sin-ti-tulo.jpg" 
+URL_AVATAR_HABLANDO = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExb2psM3c5NmNsejJidWRldzd1MzNuMjNlaGpteXlhOThlNWY0aWxrNSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/gSov87k6n2tITSpWgJ/giphy.gif" 
+
+MEDALLAS_MAESTRAS = {
+    "primera_mision": {"titulo": "Primer Paso", "icono": "🥉", "desc": "Completaste tu primera tutoría con éxito."},
+    "mente_brillante": {"titulo": "Mente Brillante", "icono": "🥈", "desc": "Obtuviste una calificación de 85 o más puntos."},
+    "perfeccion": {"titulo": "Perfección", "icono": "🥇", "desc": "Alcanzaste la excelencia absoluta de 100/100."},
+    "audiofilo": {"titulo": "Audiófilo", "icono": "🎙️", "desc": "Completaste una tutoría interactuando por voz."},
+    "investigador": {"titulo": "Investigador", "icono": "📂", "desc": "Sustentaste tus tareas con archivos PDF o imágenes."}
+}
 
 try:
     from pypdf import PdfReader
@@ -28,25 +49,9 @@ try:
 except ImportError:
     VOZ_DISPONIBLE = False
 
-st.set_page_config(page_title="Portal Educativo - Gimnasio Bilingüe Altamar de Cartagena", page_icon="🏫", layout="centered")
-
-st.markdown("""
-<style>
-    [data-testid="stSidebar"] {display: none !important;}
-    [data-testid="collapsedControl"] {display: none !important;}
-</style>
-""", unsafe_allow_html=True)
-
-URL_LOGO_COLEGIO = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSE3X0xDak4bCBuDN64-J9RuKK8l6BrFgnfPFhrSxTT6uaPc5yEaGm77Su6&s=10" 
-
-MEDALLAS_MAESTRAS = {
-    "primera_mision": {"titulo": "Primer Paso", "icono": "🥉", "desc": "Completaste tu primera tutoría con éxito."},
-    "mente_brillante": {"titulo": "Mente Brillante", "icono": "🥈", "desc": "Obtuviste una calificación de 85 o más puntos."},
-    "perfeccion": {"titulo": "Perfección", "icono": "🥇", "desc": "Alcanzaste la excelencia absoluta de 100/100."},
-    "audiofilo": {"titulo": "Audiófilo", "icono": "🎙️", "desc": "Completaste una tutoría interactuando por voz."},
-    "investigador": {"titulo": "Investigador", "icono": "📂", "desc": "Sustentaste tus tareas con archivos PDF o imágenes."}
-}
-
+# ==========================================
+# 2. INICIALIZACIÓN DE BASES Y APIS
+# ==========================================
 @st.cache_resource
 def iniciar_sistemas():
     load_dotenv()
@@ -61,6 +66,68 @@ def obtener_perfil(correo):
     respuesta = supabase.table("estudiantes").select("*").eq("correo", correo).execute()
     return respuesta.data[0] if respuesta.data else None
 
+# ==========================================
+# 3. MÓDULO DE PAGOS (MERCADO PAGO)
+# ==========================================
+def crear_link_de_pago(estudiante_email, monto=80000, plan_nombre="Suscripción Tutor IA - NOVA"):
+    """Genera una preferencia de cobro por $80.000 COP."""
+    # Lee el token de las variables de entorno
+    token = os.environ.get("MERCADOPAGO_ACCESS_TOKEN") 
+    sdk = mercadopago.SDK(token)
+
+    preference_data = {
+        "items": [
+            {
+                "title": plan_nombre,
+                "quantity": 1,
+                "currency_id": "COP",
+                "unit_price": float(monto)
+            }
+        ],
+        "payer": {
+            "email": estudiante_email
+        },
+        "back_urls": {
+            "success": "https://tu-app.streamlit.app/?pago=exitoso",
+            "failure": "https://tu-app.streamlit.app/?pago=fallido",
+            "pending": "https://tu-app.streamlit.app/?pago=pendiente"
+        },
+        "auto_return": "approved",
+    }
+
+    try:
+        preference_response = sdk.preference().create(preference_data)
+        return preference_response["response"]["init_point"]
+    except Exception as e:
+        raise Exception(f"Fallo al comunicarse con Mercado Pago: {e}")
+
+def mostrar_interfaz_pago(perfil_estudiante):
+    """Muro de pago para estudiantes sin suscripción activa."""
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown(f"<div style='text-align: center;'><img src='{URL_LOGO_COLEGIO}' width='100' style='border-radius: 50%;'></div>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center;'>💳 Inscripción a NOVA Educación</h2>", unsafe_allow_html=True)
+    
+    st.warning(f"Hola **{perfil_estudiante['nombre']}**, tu acceso al Tutor IA no está activo o ha vencido.")
+    st.write("Para desbloquear tus misiones y continuar con tu aprendizaje, necesitas una suscripción activa.")
+    
+    st.info("Plan Personalizado Premium: **$80.000 COP / mes**")
+    
+    if st.button("Proceder al Pago Seguro", type="primary", use_container_width=True):
+        try:
+            with st.spinner("Conectando con Mercado Pago..."):
+                url_pago = crear_link_de_pago(estudiante_email=perfil_estudiante['correo'])
+            st.success("¡Enlace generado con éxito!")
+            st.link_button("👉 Ir a Pagar Ahora (PSE, Nequi, Tarjeta)", url_pago, use_container_width=True)
+        except Exception as e:
+            st.error(f"Error de conexión con la pasarela. Detalle: {e}")
+            
+    if st.button("⬅️ Cerrar Sesión"):
+        st.session_state.clear()
+        st.rerun()
+
+# ==========================================
+# 4. MÚDULOS DE IA Y EVALUACIÓN
+# ==========================================
 def transcribir_audio(audio_bytes):
     try:
         respuesta = cliente_groq.audio.transcriptions.create(
@@ -157,9 +224,6 @@ def generar_respuesta(perfil, tutoria, pregunta_actual, historial_mensajes):
     momento_pedagogico = tutoria.get('momento_pedagogico', 'General / Ciclo Completo')
     modo_voz = tutoria.get('modo_voz', False)
 
-    # ==========================================
-    # CEREBRO MHT: PROTOCOLO DE INTERACCIÓN
-    # ==========================================
     instrucciones = f"""ROL Y PERFIL DEL ASISTENTE:
 Eres un "Tutor Pedagógico de IA", experto en el Modelo Holístico Transformador (MHT) desarrollado por Giovanni Marcello Iafrancesco. 
 Tu propósito es guiar al estudiante de manera empática, detallada y rigurosa hacia la madurez integral (sentir, pensar, actuar, vivir, convivir y emprender).
@@ -175,7 +239,7 @@ Estás trabajando en el momento de: **{momento_pedagogico}**.
 
 TUS BASES MHT PARA ESTE MOMENTO (Aplica el que corresponda a esta sesión):
 1. IDENTIFICACIÓN (Sentir): Movilizar afectiva y cognitivamente. Rescatar saberes previos y emociones.
-2. CONTEXTUALIZACIÓN (Pensar): Conectar el saber técnico con el entorno real (histórico, social, local, cotidiano). Explicar el "para qué" sirve.
+2. CONTEXTUALIZACIÓN (Pensar): Conectar el saber técnico con el entorno real. Explicar el "para qué" sirve.
 3. APLICACIÓN (Saber Hacer): Experimentar y ejecutar de forma estructurada. Talleres y resolución guiada.
 4. INNOVACIÓN (Saber Trascender): Crear, transformar y proponer soluciones originales e inéditas a problemas reales.
 
@@ -208,79 +272,13 @@ INSTRUCCIONES DE COMPORTAMIENTO:
         temperature=0.7
     )
     return respuesta_ia.choices[0].message.content
-    # ====== 3. MÓDULO DE PAGOS (MERCADO PAGO) ======
-def crear_link_de_pago(estudiante_email, monto=80000, plan_nombre="Suscripción Tutor IA - NOVA"):
-    """Genera una preferencia de cobro por $80.000 COP."""
-    token = st.secrets.get("MERCADOPAGO_ACCESS_TOKEN", os.getenv("MERCADOPAGO_ACCESS_TOKEN"))
-    sdk = mercadopago.SDK(token)
 
-    preference_data = {
-        "items": [
-            {
-                "title": plan_nombre,
-                "quantity": 1,
-                "currency_id": "COP",
-                "unit_price": float(monto)
-            }
-        ],
-        "payer": {
-            "email": estudiante_email
-        },
-        "back_urls": {
-            "success": "https://tutor-ia-6sfonzsurtvkg9cfd4ecag.streamlit.app/?pago=exitoso",
-            "failure": "https://tutor-ia-6sfonzsurtvkg9cfd4ecag.streamlit.app/?pago=fallido",
-            "pending": "https://tutor-ia-6sfonzsurtvkg9cfd4ecag.streamlit.app/?pago=pendiente"
-        },
-        "auto_return": "approved",
-    }
-
-    try:
-        preference_response = sdk.preference().create(preference_data)
-        return preference_response["response"]["init_point"]
-    except Exception as e:
-        raise Exception(f"Fallo al comunicarse con Mercado Pago: {e}")
-
-def mostrar_interfaz_pago(email):
-    """Muro de pago para estudiantes sin suscripción activa."""
-    st.title("💳 Inscripción a NOVA Educación")
-    st.markdown("### Tu acceso al Tutor IA no está activo o ha vencido.")
-    st.write("Plan Personalizado Premium: **$80.000 COP / mes**")
-    
-    if st.button("Proceder al Pago Seguro", type="primary"):
-        try:
-            with st.spinner("Generando enlace de pago encriptado..."):
-                url_pago = crear_link_de_pago(estudiante_email=email)
-            st.success("¡Enlace generado con éxito!")
-            st.link_button("👉 Ir a Pagar Ahora (PSE, Nequi, Tarjeta)", url_pago)
-            st.info("Una vez realices el pago, notifica a tu docente o espera a que el sistema valide tu ingreso.")
-        except Exception as e:
-            st.error(f"Error de conexión con la pasarela. Detalle: {e}")
-
-# ====== 4. MÓDULO DE BASE DE DATOS (EL GUARDIÁN) ======
-def verificar_acceso_estudiante(email_estudiante):
-    """Consulta en la tabla 'estudiantes' si la columna 'suscripcion_activa' es TRUE."""
-    if not supabase:
-        return False
-    
-    try:
-        respuesta = supabase.table("estudiantes").select("suscripcion_activa").eq("email", email_estudiante).execute()
-        datos = respuesta.data
-        
-        # Si el estudiante existe en la base de datos, evaluamos su estado
-        if len(datos) > 0:
-            return datos[0].get('suscripcion_activa', False)
-        else:
-            # Si el correo no existe en la base de datos, mostramos advertencia
-            st.sidebar.warning("Este correo no está registrado en el sistema. Habla con tu docente.")
-            return False
-            
-    except Exception as e:
-        st.error(f"Error al consultar la base de datos: {e}")
-        return False
 
 # ==========================================
-# 4. INTERFAZ GRÁFICA (UI)
+# 5. FLUJO PRINCIPAL E INTERFAZ GRÁFICA (UI)
 # ==========================================
+
+# 5.1 LOGIN DEL SISTEMA
 if not st.session_state.get('usuario_valido', False):
     st.markdown("<br><br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -304,337 +302,347 @@ if not st.session_state.get('usuario_valido', False):
                     
         st.markdown("<br><p style='text-align: center;'><a href='/tablero_profesor' target='_self' style='color: #9CA3AF; text-decoration: none; font-size: 0.8rem;'>👨‍🏫 Acceso Docente</a></p>", unsafe_allow_html=True)
 
+# 5.2 VERIFICACIÓN DE PAGO Y DASHBOARD
 else:
     perfil_actual = st.session_state['perfil']
     
-    if 'tutoria_activa' not in st.session_state:
-        col_saludo, col_salir = st.columns([3, 1])
-        with col_saludo:
-            st.markdown(f"### 👋 Hola, {perfil_actual['nombre']}")
-        with col_salir:
-            if st.button("🚪 Salir", use_container_width=True):
-                st.session_state.clear()
-                st.rerun()
-                
-        st.divider()
-        tab_misiones, tab_rendimiento = st.tabs(["🎮 Mis Misiones", "📊 Mi Rendimiento"])
-        
-        with tab_misiones:
-            try:
-                res_med_db = supabase.table("medallas_ganadas").select("medalla_clave").eq("estudiante_id", perfil_actual['id']).execute()
-                claves_ganadas = [registro['medalla_clave'] for registro in res_med_db.data] if res_med_db.data else []
-                
-                st.markdown("#### 🏆 Tus Logros Académicos")
-                columnas_medallas = st.columns(len(MEDALLAS_MAESTRAS))
-                for index, (clave, metadatos) in enumerate(MEDALLAS_MAESTRAS.items()):
-                    with columnas_medallas[index]:
-                        if clave in claves_ganadas:
-                            st.markdown(f"""
-                            <div style="text-align: center; background-color: #f0fdf4; border: 2px solid #22c55e; padding: 12px; border-radius: 12px; min-height: 140px;">
-                                <span style="font-size: 2.2rem;">{metadatos['icono']}</span><br>
-                                <b style="font-size: 0.8rem; color: #166534; display: block; margin-top: 5px;">{metadatos['titulo']}</b>
-                                <p style="font-size: 0.65rem; color: #15803d; margin: 5px 0 0 0; line-height: 1.1;">{metadatos['desc']}</p>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        else:
-                            st.markdown(f"""
-                            <div style="text-align: center; background-color: #f8fafc; border: 2px dashed #cbd5e1; padding: 12px; border-radius: 12px; min-height: 140px; opacity: 0.45;">
-                                <span style="font-size: 2.2rem; filter: grayscale(100%);">🔒</span><br>
-                                <b style="font-size: 0.8rem; color: #64748b; display: block; margin-top: 5px;">Bloqueado</b>
-                                <p style="font-size: 0.65rem; color: #94a3b8; margin: 5px 0 0 0; line-height: 1.1;">{metadatos['desc']}</p>
-                            </div>
-                            """, unsafe_allow_html=True)
-                st.write("")
-            except:
-                pass
-
-            st.subheader("📚 Tus Tutorías Pendientes")
-            try:
-                res_tutorias = supabase.table("tutorias").select("*").eq("estudiante_id", perfil_actual['id']).eq("estado", "pendiente").execute()
-                tutorias_pendientes = res_tutorias.data
-                
-                if not tutorias_pendientes:
-                    st.success("¡Felicidades! No tienes tutorías pendientes. Eres libre. 🎉")
-                else:
-                    for tutoria in tutorias_pendientes:
-                        with st.container():
-                            icono_voz = " 🎙️ (Misión con Voz)" if tutoria.get('modo_voz', False) else ""
-                            momento_badge = f"<span style='background:#e0e7ff; color:#3730a3; padding:3px 8px; border-radius:12px; font-size:0.7rem;'>Fase: {tutoria.get('momento_pedagogico', 'General')}</span>"
-                            
-                            st.markdown(f"""
-                            <div style="background-color: #f3f4f6; padding: 20px; border-radius: 10px; margin-bottom: 10px; border-left: 5px solid #4F46E5;">
-                                <h3 style="margin-top: 0;">📘 {tutoria['asignatura']}{icono_voz}</h3>
-                                {momento_badge}
-                                <p style="margin-top:10px;"><b>Misión:</b> {tutoria['mision']}</p>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            if st.button(f"Entrar a tutoría de {tutoria['asignatura']}", key=tutoria['id'], type="primary"):
-                                st.session_state['tutoria_activa'] = tutoria
-                                primer_msg = f"¡Hola, {perfil_actual['nombre']}! Soy tu Tutor. Hoy trabajaremos en la fase de **{tutoria.get('momento_pedagogico', 'General')}**. Tu misión es: *{tutoria['mision']}*. ¿Comenzamos?"
-                                st.session_state['mensajes'] = [{"role": "assistant", "content": primer_msg}]
-                                st.rerun()
-            except Exception as e:
-                st.error("Error al cargar las tutorías.")
-
-        with tab_rendimiento:
-            st.markdown("#### 📈 Resumen de tu Desempeño Holístico")
-            try:
-                res_eval = supabase.table("evaluaciones").select("*").eq("estudiante_id", perfil_actual['id']).order("created_at", desc=True).execute()
-                historial_evaluaciones = res_eval.data
-                
-                if not historial_evaluaciones:
-                    st.info("Aún no tienes calificaciones registradas. ¡Completa tu primera misión para ver tus notas aquí!")
-                else:
-                    total_misiones = len(historial_evaluaciones)
-                    promedio = sum(item['nota'] for item in historial_evaluaciones) / total_misiones
-                    
-                    col_prom, col_total = st.columns(2)
-                    with col_prom:
-                        st.markdown(f"""
-                        <div style="text-align: center; background-color: #eff6ff; padding: 15px; border-radius: 10px; border: 1px solid #bfdbfe;">
-                            <p style="color: #1e3a8a; font-weight: bold; margin: 0;">Desempeño Integral</p>
-                            <h2 style="color: #2563eb; margin: 0;">{promedio:.1f} <span style="font-size: 1rem; color: #60a5fa;">/100</span></h2>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    with col_total:
-                        st.markdown(f"""
-                        <div style="text-align: center; background-color: #fef2f2; padding: 15px; border-radius: 10px; border: 1px solid #fecaca;">
-                            <p style="color: #7f1d1d; font-weight: bold; margin: 0;">Retos Completados</p>
-                            <h2 style="color: #dc2626; margin: 0;">{total_misiones}</h2>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
-                    st.divider()
-                    st.markdown("#### 📖 Historial de Retroalimentaciones")
-                    
-                    for evaluacion in historial_evaluaciones:
-                        fecha_corta = evaluacion['created_at'][:10]
-                        nota = evaluacion['nota']
-                        color_nota = "🟢" if nota >= 85 else "🟡" if nota >= 60 else "🔴"
-                        with st.expander(f"{color_nota} {fecha_corta} | {evaluacion['tarea']} - Nota: {nota}/100"):
-                            st.markdown(f"**🗣️ Guía Pedagógica del Tutor:**")
-                            st.info(evaluacion['feedback'])
-            except Exception as e:
-                st.error("No se pudo cargar tu historial.")
-
-    # ------------------------------------------
-    # PANTALLA DE TUTORÍA ACTIVA
-    # ------------------------------------------
+    # --- EL MURO DE PAGO (PAYWALL) ---
+    # Extraemos el estado de la suscripción (asegurando que leemos correctamente booleanos y strings)
+    suscripcion_activa = perfil_actual.get('suscripcion_activa', False)
+    
+    # Si la suscripción NO es verdadera, bloqueamos el acceso
+    if str(suscripcion_activa).lower() != "true" and suscripcion_activa != True:
+        mostrar_interfaz_pago(perfil_actual)
+    
+    # --- ACCESO CONCEDIDO (Si pagó, entra aquí) ---
     else:
-        tutoria_actual = st.session_state['tutoria_activa']
-        modo_voz_activado = tutoria_actual.get('modo_voz', False)
-        
-        if modo_voz_activado:
-            st.markdown(f"""
-            <style>
-                @keyframes pulse-red {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.3; }} 100% {{ opacity: 1; }} }}
-                @keyframes float-window {{ 0% {{ transform: translateY(0px); }} 50% {{ transform: translateY(-8px); }} 100% {{ transform: translateY(0px); }} }}
-                .floating-pip {{ position: fixed; top: 80px; right: 20px; width: 130px; height: 180px; border-radius: 16px; box-shadow: 0px 10px 30px rgba(0,0,0,0.3); border: 3px solid #4F46E5; z-index: 999999; overflow: hidden; background-color: #000; animation: float-window 4s ease-in-out infinite; }}
-                .floating-pip img {{ width: 100%; height: 100%; object-fit: cover; }}
-                .live-badge {{ position: absolute; top: 8px; right: 8px; background-color: #ef4444; color: white; font-size: 0.6rem; font-weight: bold; padding: 3px 8px; border-radius: 12px; z-index: 2; animation: pulse-red 1.5s infinite; box-shadow: 0px 2px 5px rgba(0,0,0,0.5); display: none; }}
-            </style>
-            <div class="floating-pip" id="pip-container">
-                <div class="live-badge" id="live-badge-ui">🔴 LIVE</div>
-                <img id="tutor-avatar-ui" src="{URL_AVATAR_SILENCIO}">
-            </div>
-            """, unsafe_allow_html=True)
-
-        col_back, col_title = st.columns([1, 4])
-        with col_back:
-            if st.button("⬅️ Salir", use_container_width=True):
-                del st.session_state['tutoria_activa']
-                if 'resultado_evaluacion' in st.session_state: del st.session_state['resultado_evaluacion']
-                st.rerun()
-        with col_title:
-            st.success(f"🎯 **{tutoria_actual['asignatura']} | Fase: {tutoria_actual.get('momento_pedagogico', 'General')}**")
-
-        if 'resultado_evaluacion' not in st.session_state:
-            for index, mensaje in enumerate(st.session_state.mensajes):
-                avatar_icon = "🧑‍🎓" if mensaje["role"] == "user" else URL_LOGO_COLEGIO
-                with st.chat_message(mensaje["role"], avatar=avatar_icon):
-                    if isinstance(mensaje["content"], list):
-                        for item in mensaje["content"]:
-                            if item["type"] == "text":
-                                st.markdown(item["text"])
-                            elif item["type"] == "image_url":
-                                b64_img = item["image_url"]["url"].split(",")[1]
-                                st.image(base64.b64decode(b64_img), width=350)
-                    else:
-                        if "[DOCUMENTO PDF ADJUNTO]:" in mensaje["content"]:
-                            partes = mensaje["content"].split("[DOCUMENTO PDF ADJUNTO]:")
-                            st.markdown(partes[0].strip())
-                            with st.expander("📄 Documento PDF Adjunto (Texto Extraído)"):
-                                st.text(partes[1].strip())
-                        else:
-                            st.markdown(mensaje["content"])
-                            
-                    if mensaje.get("audio_bytes"):
-                        es_el_ultimo = (index == len(st.session_state.mensajes) - 1)
-                        b64_audio = base64.b64encode(mensaje["audio_bytes"]).decode()
-                        codigo_reproductor_inteligente = f"""
-                        <audio id="audio-{index}" controls {"autoplay" if es_el_ultimo else ""} style="width: 100%; height: 45px; outline: none; border-radius: 10px;">
-                            <source src="data:audio/mp3;base64,{b64_audio}" type="audio/mp3">
-                        </audio>
-                        <script>
-                            (function() {{
-                                const audio = document.getElementById('audio-{index}');
-                                const parentDoc = window.parent.document;
-                                const avatar = parentDoc.getElementById('tutor-avatar-ui');
-                                const badge = parentDoc.getElementById('live-badge-ui');
-                                if (avatar && audio) {{
-                                    audio.onplay = () => {{ avatar.src = "{URL_AVATAR_HABLANDO}"; if (badge) badge.style.display = 'block'; }};
-                                    audio.onended = () => {{ avatar.src = "{URL_AVATAR_SILENCIO}"; if (badge) badge.style.display = 'none'; }};
-                                    audio.onpause = audio.onended;
-                                }}
-                            }})();
-                        </script>
-                        """
-                        components.html(codigo_reproductor_inteligente, height=60)
-
-            col_doc, col_voz = st.columns([1, 1])
-            with col_doc:
-                with st.expander("📎 Adjuntar PDF / Imagen"):
-                    archivo_subido = st.file_uploader("Sube y escribe abajo para enviar.", type=["pdf", "png", "jpg", "jpeg", "webp"], label_visibility="collapsed")
-                    if archivo_subido:
-                        st.success("Archivo listo.")
-            
-            with col_voz:
-                with st.expander("🎙️ Enviar nota de voz"):
-                    if VOZ_DISPONIBLE:
-                        st.markdown(f"<p style='font-size:0.8rem; text-align:center;'>Usa la grabadora a continuación para hablar.</p>", unsafe_allow_html=True)
-                        grabacion = st.audio_input("Graba tu mensaje", label_visibility="collapsed")
-                        if grabacion is not None:
-                            audio_bytes = grabacion.getvalue()
-                            if audio_bytes != st.session_state.get('ultimo_audio'):
-                                st.session_state['ultimo_audio'] = audio_bytes
-                                st.markdown(f"<p style='text-align:center;'>⏳ Escuchando tu nota de voz...</p>", unsafe_allow_html=True)
-                                texto_voz = transcribir_audio(audio_bytes)
-                                st.session_state['mensaje_voz_pendiente'] = texto_voz
-                                st.rerun() 
-                    else:
-                        st.warning("⚠️ La librería gTTS no está instalada.")
-
-            pregunta_escrita = st.chat_input("Escribe tu mensaje para enviar...")
-            pregunta_voz = st.session_state.get('mensaje_voz_pendiente')
-            pregunta = pregunta_escrita or pregunta_voz
-
-            if pregunta:
-                if pregunta_voz: del st.session_state['mensaje_voz_pendiente']
-                contenido_final = pregunta
-                texto_pdf_extraido = ""
-                
-                if archivo_subido is not None:
-                    st.session_state['evidencia_adjuntada_en_mision'] = True
-                    if archivo_subido.type == "application/pdf":
-                        if PDF_DISPONIBLE:
-                            try:
-                                lector = PdfReader(archivo_subido)
-                                texto_pdf_extraido = "\n".join([pagina.extract_text() for pagina in lector.pages])
-                                contenido_final = f"{pregunta}\n\n[DOCUMENTO PDF ADJUNTO]:\n{texto_pdf_extraido}"
-                                st.session_state.mensajes.append({"role": "user", "content": contenido_final})
-                            except Exception as e:
-                                st.error(f"Error al leer PDF: {e}")
-                                st.session_state.mensajes.append({"role": "user", "content": pregunta})
-                    elif archivo_subido.type.startswith("image/"):
-                        bytes_data = archivo_subido.getvalue()
-                        base64_encoded = base64.b64encode(bytes_data).decode('utf-8')
-                        contenido_final = [
-                            {"type": "text", "text": pregunta},
-                            {"type": "image_url", "image_url": {"url": f"data:{archivo_subido.type};base64,{base64_encoded}"}}
-                        ]
-                        st.session_state.mensajes.append({"role": "user", "content": contenido_final})
-                else:
-                    st.session_state.mensajes.append({"role": "user", "content": contenido_final})
-
-                if pregunta_voz:
-                    st.session_state['voz_utilizada_en_mision'] = True
-
-                with st.chat_message("assistant", avatar=URL_LOGO_COLEGIO):
-                    st.markdown(f"<p>Pensando...</p>", unsafe_allow_html=True)
+        if 'tutoria_activa' not in st.session_state:
+            col_saludo, col_salir = st.columns([3, 1])
+            with col_saludo:
+                st.markdown(f"### 👋 Hola, {perfil_actual['nombre']}")
+            with col_salir:
+                if st.button("🚪 Salir", use_container_width=True):
+                    st.session_state.clear()
+                    st.rerun()
                     
-                    respuesta = generar_respuesta(perfil_actual, tutoria_actual, pregunta, st.session_state.mensajes)
-                    audio_generado = None
-                    if VOZ_DISPONIBLE and modo_voz_activado:
-                        try:
-                            tts = gTTS(respuesta, lang='es', tld='com.mx')
-                            fp = io.BytesIO()
-                            tts.write_to_fp(fp)
-                            audio_generado = fp.getvalue()
-                        except:
-                            pass 
-                
-                st.session_state.mensajes.append({
-                    "role": "assistant", 
-                    "content": respuesta,
-                    "audio_bytes": audio_generado 
-                })
-                st.rerun() 
-
             st.divider()
-            ha_interactuado = len(st.session_state.mensajes) > 1
-            if not ha_interactuado:
-                st.info("💡 Escribe al menos un mensaje o sube un archivo antes de entregar.")
+            tab_misiones, tab_rendimiento = st.tabs(["🎮 Mis Misiones", "📊 Mi Rendimiento"])
+            
+            with tab_misiones:
+                try:
+                    res_med_db = supabase.table("medallas_ganadas").select("medalla_clave").eq("estudiante_id", perfil_actual['id']).execute()
+                    claves_ganadas = [registro['medalla_clave'] for registro in res_med_db.data] if res_med_db.data else []
+                    
+                    st.markdown("#### 🏆 Tus Logros Académicos")
+                    columnas_medallas = st.columns(len(MEDALLAS_MAESTRAS))
+                    for index, (clave, metadatos) in enumerate(MEDALLAS_MAESTRAS.items()):
+                        with columnas_medallas[index]:
+                            if clave in claves_ganadas:
+                                st.markdown(f"""
+                                <div style="text-align: center; background-color: #f0fdf4; border: 2px solid #22c55e; padding: 12px; border-radius: 12px; min-height: 140px;">
+                                    <span style="font-size: 2.2rem;">{metadatos['icono']}</span><br>
+                                    <b style="font-size: 0.8rem; color: #166534; display: block; margin-top: 5px;">{metadatos['titulo']}</b>
+                                    <p style="font-size: 0.65rem; color: #15803d; margin: 5px 0 0 0; line-height: 1.1;">{metadatos['desc']}</p>
+                                </div>
+                                """, unsafe_allow_html=True)
+                            else:
+                                st.markdown(f"""
+                                <div style="text-align: center; background-color: #f8fafc; border: 2px dashed #cbd5e1; padding: 12px; border-radius: 12px; min-height: 140px; opacity: 0.45;">
+                                    <span style="font-size: 2.2rem; filter: grayscale(100%);">🔒</span><br>
+                                    <b style="font-size: 0.8rem; color: #64748b; display: block; margin-top: 5px;">Bloqueado</b>
+                                    <p style="font-size: 0.65rem; color: #94a3b8; margin: 5px 0 0 0; line-height: 1.1;">{metadatos['desc']}</p>
+                                </div>
+                                """, unsafe_allow_html=True)
+                    st.write("")
+                except:
+                    pass
 
-            col_vacia, col_boton = st.columns([2, 1])
-            with col_boton:
-                if st.button("📤 Entregar Actividad", type="primary", use_container_width=True, disabled=not ha_interactuado):
-                    with st.spinner("🧑‍🏫 Evaluando de forma Holística..."):
-                        try:
-                            resultado_json_str = evaluar_actividad(tutoria_actual, st.session_state.mensajes)
-                            datos_evaluacion = json.loads(resultado_json_str)
-                            
-                            historial_limpio_para_db = []
-                            for m in st.session_state.mensajes:
-                                mensaje_copia = {"role": m["role"], "content": m["content"]}
-                                historial_limpio_para_db.append(mensaje_copia)
+                st.subheader("📚 Tus Tutorías Pendientes")
+                try:
+                    res_tutorias = supabase.table("tutorias").select("*").eq("estudiante_id", perfil_actual['id']).eq("estado", "pendiente").execute()
+                    tutorias_pendientes = res_tutorias.data
+                    
+                    if not tutorias_pendientes:
+                        st.success("¡Felicidades! No tienes tutorías pendientes. Eres libre. 🎉")
+                    else:
+                        for tutoria in tutorias_pendientes:
+                            with st.container():
+                                icono_voz = " 🎙️ (Misión con Voz)" if tutoria.get('modo_voz', False) else ""
+                                momento_badge = f"<span style='background:#e0e7ff; color:#3730a3; padding:3px 8px; border-radius:12px; font-size:0.7rem;'>Fase: {tutoria.get('momento_pedagogico', 'General')}</span>"
                                 
-                            historial_completo = json.dumps(historial_limpio_para_db, ensure_ascii=False, indent=4)
+                                st.markdown(f"""
+                                <div style="background-color: #f3f4f6; padding: 20px; border-radius: 10px; margin-bottom: 10px; border-left: 5px solid #4F46E5;">
+                                    <h3 style="margin-top: 0;">📘 {tutoria['asignatura']}{icono_voz}</h3>
+                                    {momento_badge}
+                                    <p style="margin-top:10px;"><b>Misión:</b> {tutoria['mision']}</p>
+                                </div>
+                                """, unsafe_allow_html=True)
+                                if st.button(f"Entrar a tutoría de {tutoria['asignatura']}", key=tutoria['id'], type="primary"):
+                                    st.session_state['tutoria_activa'] = tutoria
+                                    primer_msg = f"¡Hola, {perfil_actual['nombre']}! Soy tu Tutor. Hoy trabajaremos en la fase de **{tutoria.get('momento_pedagogico', 'General')}**. Tu misión es: *{tutoria['mision']}*. ¿Comenzamos?"
+                                    st.session_state['mensajes'] = [{"role": "assistant", "content": primer_msg}]
+                                    st.rerun()
+                except Exception as e:
+                    st.error("Error al cargar las tutorías.")
+
+            with tab_rendimiento:
+                st.markdown("#### 📈 Resumen de tu Desempeño Holístico")
+                try:
+                    res_eval = supabase.table("evaluaciones").select("*").eq("estudiante_id", perfil_actual['id']).order("created_at", desc=True).execute()
+                    historial_evaluaciones = res_eval.data
+                    
+                    if not historial_evaluaciones:
+                        st.info("Aún no tienes calificaciones registradas. ¡Completa tu primera misión para ver tus notas aquí!")
+                    else:
+                        total_misiones = len(historial_evaluaciones)
+                        promedio = sum(item['nota'] for item in historial_evaluaciones) / total_misiones
+                        
+                        col_prom, col_total = st.columns(2)
+                        with col_prom:
+                            st.markdown(f"""
+                            <div style="text-align: center; background-color: #eff6ff; padding: 15px; border-radius: 10px; border: 1px solid #bfdbfe;">
+                                <p style="color: #1e3a8a; font-weight: bold; margin: 0;">Desempeño Integral</p>
+                                <h2 style="color: #2563eb; margin: 0;">{promedio:.1f} <span style="font-size: 1rem; color: #60a5fa;">/100</span></h2>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        with col_total:
+                            st.markdown(f"""
+                            <div style="text-align: center; background-color: #fef2f2; padding: 15px; border-radius: 10px; border: 1px solid #fecaca;">
+                                <p style="color: #7f1d1d; font-weight: bold; margin: 0;">Retos Completados</p>
+                                <h2 style="color: #dc2626; margin: 0;">{total_misiones}</h2>
+                            </div>
+                            """, unsafe_allow_html=True)
                             
-                            supabase.table("evaluaciones").insert({
-                                "estudiante_id": perfil_actual['id'],
-                                "tarea": tutoria_actual['mision'],
-                                "nota": datos_evaluacion['nota'],
-                                "feedback": datos_evaluacion['feedback'],
-                                "historial_evidencia": historial_completo
-                            }).execute()
-                            
-                            supabase.table("tutorias").update({"estado": "completada"}).eq("id", tutoria_actual['id']).execute()
-                            
-                            # GAMIFICACIÓN
-                            medallas_desbloqueadas_ahora = []
-                            if otorgar_medalla_logica(perfil_actual['id'], "primera_mision"): medallas_desbloqueadas_ahora.append("primera_mision")
-                            if datos_evaluacion['nota'] >= 85: 
-                                if otorgar_medalla_logica(perfil_actual['id'], "mente_brillante"): medallas_desbloqueadas_ahora.append("mente_brillante")
-                            if datos_evaluacion['nota'] == 100:
-                                if otorgar_medalla_logica(perfil_actual['id'], "perfeccion"): medallas_desbloqueadas_ahora.append("perfeccion")
-                            if st.session_state.get('voz_utilizada_en_mision', False) or modo_voz_activado:
-                                if otorgar_medalla_logica(perfil_actual['id'], "audiofilo"): medallas_desbloqueadas_ahora.append("audiofilo")
-                            if st.session_state.get('evidencia_adjuntada_en_mision', False):
-                                if otorgar_medalla_logica(perfil_actual['id'], "investigador"): medallas_desbloqueadas_ahora.append("investigador")
-                            
-                            if medallas_desbloqueadas_ahora: st.session_state['nuevas_medallas'] = medallas_desbloqueadas_ahora
-                            st.session_state['resultado_evaluacion'] = datos_evaluacion
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error: {e}")
-        
+                        st.divider()
+                        st.markdown("#### 📖 Historial de Retroalimentaciones")
+                        
+                        for evaluacion in historial_evaluaciones:
+                            fecha_corta = evaluacion['created_at'][:10]
+                            nota = evaluacion['nota']
+                            color_nota = "🟢" if nota >= 85 else "🟡" if nota >= 60 else "🔴"
+                            with st.expander(f"{color_nota} {fecha_corta} | {evaluacion['tarea']} - Nota: {nota}/100"):
+                                st.markdown(f"**🗣️ Guía Pedagógica del Tutor:**")
+                                st.info(evaluacion['feedback'])
+                except Exception as e:
+                    st.error("No se pudo cargar tu historial.")
+
+        # ------------------------------------------
+        # PANTALLA DE TUTORÍA ACTIVA (EL CHAT IA)
+        # ------------------------------------------
         else:
-            datos = st.session_state['resultado_evaluacion']
-            st.markdown("### 📊 Actividad Completada")
-            st.markdown(f"<h1 style='text-align: center; color: green;'>{datos['nota']}/100</h1>", unsafe_allow_html=True)
-            st.info(f"**🗣️ Comentario del Tutor:**\n{datos['feedback']}")
+            tutoria_actual = st.session_state['tutoria_activa']
+            modo_voz_activado = tutoria_actual.get('modo_voz', False)
             
-            if 'nuevas_medallas' in st.session_state:
-                st.balloons() 
-                st.markdown("#### 🎉 ¡Has desbloqueado nuevos logros integrales en esta misión!")
-                for clave_m in st.session_state['nuevas_medallas']:
-                    meta = MEDALLAS_MAESTRAS[clave_m]
-                    st.success(f"**{meta['icono']} {meta['titulo']}:** {meta['desc']}")
+            if modo_voz_activado:
+                st.markdown(f"""
+                <style>
+                    @keyframes pulse-red {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.3; }} 100% {{ opacity: 1; }} }}
+                    @keyframes float-window {{ 0% {{ transform: translateY(0px); }} 50% {{ transform: translateY(-8px); }} 100% {{ transform: translateY(0px); }} }}
+                    .floating-pip {{ position: fixed; top: 80px; right: 20px; width: 130px; height: 180px; border-radius: 16px; box-shadow: 0px 10px 30px rgba(0,0,0,0.3); border: 3px solid #4F46E5; z-index: 999999; overflow: hidden; background-color: #000; animation: float-window 4s ease-in-out infinite; }}
+                    .floating-pip img {{ width: 100%; height: 100%; object-fit: cover; }}
+                    .live-badge {{ position: absolute; top: 8px; right: 8px; background-color: #ef4444; color: white; font-size: 0.6rem; font-weight: bold; padding: 3px 8px; border-radius: 12px; z-index: 2; animation: pulse-red 1.5s infinite; box-shadow: 0px 2px 5px rgba(0,0,0,0.5); display: none; }}
+                </style>
+                <div class="floating-pip" id="pip-container">
+                    <div class="live-badge" id="live-badge-ui">🔴 LIVE</div>
+                    <img id="tutor-avatar-ui" src="{URL_AVATAR_SILENCIO}">
+                </div>
+                """, unsafe_allow_html=True)
+
+            col_back, col_title = st.columns([1, 4])
+            with col_back:
+                if st.button("⬅️ Salir", use_container_width=True):
+                    del st.session_state['tutoria_activa']
+                    if 'resultado_evaluacion' in st.session_state: del st.session_state['resultado_evaluacion']
+                    st.rerun()
+            with col_title:
+                st.success(f"🎯 **{tutoria_actual['asignatura']} | Fase: {tutoria_actual.get('momento_pedagogico', 'General')}**")
+
+            if 'resultado_evaluacion' not in st.session_state:
+                for index, mensaje in enumerate(st.session_state.mensajes):
+                    avatar_icon = "🧑‍🎓" if mensaje["role"] == "user" else URL_LOGO_COLEGIO
+                    with st.chat_message(mensaje["role"], avatar=avatar_icon):
+                        if isinstance(mensaje["content"], list):
+                            for item in mensaje["content"]:
+                                if item["type"] == "text":
+                                    st.markdown(item["text"])
+                                elif item["type"] == "image_url":
+                                    b64_img = item["image_url"]["url"].split(",")[1]
+                                    st.image(base64.b64decode(b64_img), width=350)
+                        else:
+                            if "[DOCUMENTO PDF ADJUNTO]:" in mensaje["content"]:
+                                partes = mensaje["content"].split("[DOCUMENTO PDF ADJUNTO]:")
+                                st.markdown(partes[0].strip())
+                                with st.expander("📄 Documento PDF Adjunto (Texto Extraído)"):
+                                    st.text(partes[1].strip())
+                            else:
+                                st.markdown(mensaje["content"])
+                                
+                        if mensaje.get("audio_bytes"):
+                            es_el_ultimo = (index == len(st.session_state.mensajes) - 1)
+                            b64_audio = base64.b64encode(mensaje["audio_bytes"]).decode()
+                            codigo_reproductor_inteligente = f"""
+                            <audio id="audio-{index}" controls {"autoplay" if es_el_ultimo else ""} style="width: 100%; height: 45px; outline: none; border-radius: 10px;">
+                                <source src="data:audio/mp3;base64,{b64_audio}" type="audio/mp3">
+                            </audio>
+                            <script>
+                                (function() {{
+                                    const audio = document.getElementById('audio-{index}');
+                                    const parentDoc = window.parent.document;
+                                    const avatar = parentDoc.getElementById('tutor-avatar-ui');
+                                    const badge = parentDoc.getElementById('live-badge-ui');
+                                    if (avatar && audio) {{
+                                        audio.onplay = () => {{ avatar.src = "{URL_AVATAR_HABLANDO}"; if (badge) badge.style.display = 'block'; }};
+                                        audio.onended = () => {{ avatar.src = "{URL_AVATAR_SILENCIO}"; if (badge) badge.style.display = 'none'; }};
+                                        audio.onpause = audio.onended;
+                                    }}
+                                }})();
+                            </script>
+                            """
+                            components.html(codigo_reproductor_inteligente, height=60)
+
+                col_doc, col_voz = st.columns([1, 1])
+                with col_doc:
+                    with st.expander("📎 Adjuntar PDF / Imagen"):
+                        archivo_subido = st.file_uploader("Sube y escribe abajo para enviar.", type=["pdf", "png", "jpg", "jpeg", "webp"], label_visibility="collapsed")
+                        if archivo_subido:
+                            st.success("Archivo listo.")
+                
+                with col_voz:
+                    with st.expander("🎙️ Enviar nota de voz"):
+                        if VOZ_DISPONIBLE:
+                            st.markdown(f"<p style='font-size:0.8rem; text-align:center;'>Usa la grabadora a continuación para hablar.</p>", unsafe_allow_html=True)
+                            grabacion = st.audio_input("Graba tu mensaje", label_visibility="collapsed")
+                            if grabacion is not None:
+                                audio_bytes = grabacion.getvalue()
+                                if audio_bytes != st.session_state.get('ultimo_audio'):
+                                    st.session_state['ultimo_audio'] = audio_bytes
+                                    st.markdown(f"<p style='text-align:center;'>⏳ Escuchando tu nota de voz...</p>", unsafe_allow_html=True)
+                                    texto_voz = transcribir_audio(audio_bytes)
+                                    st.session_state['mensaje_voz_pendiente'] = texto_voz
+                                    st.rerun() 
+                        else:
+                            st.warning("⚠️ La librería gTTS no está instalada.")
+
+                pregunta_escrita = st.chat_input("Escribe tu mensaje para enviar...")
+                pregunta_voz = st.session_state.get('mensaje_voz_pendiente')
+                pregunta = pregunta_escrita or pregunta_voz
+
+                if pregunta:
+                    if pregunta_voz: del st.session_state['mensaje_voz_pendiente']
+                    contenido_final = pregunta
+                    texto_pdf_extraido = ""
+                    
+                    if archivo_subido is not None:
+                        st.session_state['evidencia_adjuntada_en_mision'] = True
+                        if archivo_subido.type == "application/pdf":
+                            if PDF_DISPONIBLE:
+                                try:
+                                    lector = PdfReader(archivo_subido)
+                                    texto_pdf_extraido = "\n".join([pagina.extract_text() for pagina in lector.pages])
+                                    contenido_final = f"{pregunta}\n\n[DOCUMENTO PDF ADJUNTO]:\n{texto_pdf_extraido}"
+                                    st.session_state.mensajes.append({"role": "user", "content": contenido_final})
+                                except Exception as e:
+                                    st.error(f"Error al leer PDF: {e}")
+                                    st.session_state.mensajes.append({"role": "user", "content": pregunta})
+                        elif archivo_subido.type.startswith("image/"):
+                            bytes_data = archivo_subido.getvalue()
+                            base64_encoded = base64.b64encode(bytes_data).decode('utf-8')
+                            contenido_final = [
+                                {"type": "text", "text": pregunta},
+                                {"type": "image_url", "image_url": {"url": f"data:{archivo_subido.type};base64,{base64_encoded}"}}
+                            ]
+                            st.session_state.mensajes.append({"role": "user", "content": contenido_final})
+                    else:
+                        st.session_state.mensajes.append({"role": "user", "content": contenido_final})
+
+                    if pregunta_voz:
+                        st.session_state['voz_utilizada_en_mision'] = True
+
+                    with st.chat_message("assistant", avatar=URL_LOGO_COLEGIO):
+                        st.markdown(f"<p>Pensando...</p>", unsafe_allow_html=True)
+                        
+                        respuesta = generar_respuesta(perfil_actual, tutoria_actual, pregunta, st.session_state.mensajes)
+                        audio_generado = None
+                        if VOZ_DISPONIBLE and modo_voz_activado:
+                            try:
+                                tts = gTTS(respuesta, lang='es', tld='com.mx')
+                                fp = io.BytesIO()
+                                tts.write_to_fp(fp)
+                                audio_generado = fp.getvalue()
+                            except:
+                                pass 
+                    
+                    st.session_state.mensajes.append({
+                        "role": "assistant", 
+                        "content": respuesta,
+                        "audio_bytes": audio_generado 
+                    })
+                    st.rerun() 
+
+                st.divider()
+                ha_interactuado = len(st.session_state.mensajes) > 1
+                if not ha_interactuado:
+                    st.info("💡 Escribe al menos un mensaje o sube un archivo antes de entregar.")
+
+                col_vacia, col_boton = st.columns([2, 1])
+                with col_boton:
+                    if st.button("📤 Entregar Actividad", type="primary", use_container_width=True, disabled=not ha_interactuado):
+                        with st.spinner("🧑‍🏫 Evaluando de forma Holística..."):
+                            try:
+                                resultado_json_str = evaluar_actividad(tutoria_actual, st.session_state.mensajes)
+                                datos_evaluacion = json.loads(resultado_json_str)
+                                
+                                historial_limpio_para_db = []
+                                for m in st.session_state.mensajes:
+                                    mensaje_copia = {"role": m["role"], "content": m["content"]}
+                                    historial_limpio_para_db.append(mensaje_copia)
+                                    
+                                historial_completo = json.dumps(historial_limpio_para_db, ensure_ascii=False, indent=4)
+                                
+                                supabase.table("evaluaciones").insert({
+                                    "estudiante_id": perfil_actual['id'],
+                                    "tarea": tutoria_actual['mision'],
+                                    "nota": datos_evaluacion['nota'],
+                                    "feedback": datos_evaluacion['feedback'],
+                                    "historial_evidencia": historial_completo
+                                }).execute()
+                                
+                                supabase.table("tutorias").update({"estado": "completada"}).eq("id", tutoria_actual['id']).execute()
+                                
+                                # GAMIFICACIÓN
+                                medallas_desbloqueadas_ahora = []
+                                if otorgar_medalla_logica(perfil_actual['id'], "primera_mision"): medallas_desbloqueadas_ahora.append("primera_mision")
+                                if datos_evaluacion['nota'] >= 85: 
+                                    if otorgar_medalla_logica(perfil_actual['id'], "mente_brillante"): medallas_desbloqueadas_ahora.append("mente_brillante")
+                                if datos_evaluacion['nota'] == 100:
+                                    if otorgar_medalla_logica(perfil_actual['id'], "perfeccion"): medallas_desbloqueadas_ahora.append("perfeccion")
+                                if st.session_state.get('voz_utilizada_en_mision', False) or modo_voz_activado:
+                                    if otorgar_medalla_logica(perfil_actual['id'], "audiofilo"): medallas_desbloqueadas_ahora.append("audiofilo")
+                                if st.session_state.get('evidencia_adjuntada_en_mision', False):
+                                    if otorgar_medalla_logica(perfil_actual['id'], "investigador"): medallas_desbloqueadas_ahora.append("investigador")
+                                
+                                if medallas_desbloqueadas_ahora: st.session_state['nuevas_medallas'] = medallas_desbloqueadas_ahora
+                                st.session_state['resultado_evaluacion'] = datos_evaluacion
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error: {e}")
             
-            if st.button("Regresar a Misiones", type="primary"):
-                del st.session_state['tutoria_activa']
-                del st.session_state['resultado_evaluacion']
-                if 'nuevas_medallas' in st.session_state: del st.session_state['nuevas_medallas']
-                if 'voz_utilizada_en_mision' in st.session_state: del st.session_state['voz_utilizada_en_mision']
-                if 'evidencia_adjuntada_en_mision' in st.session_state: del st.session_state['evidencia_adjuntada_en_mision']
-                st.rerun()
+            else:
+                datos = st.session_state['resultado_evaluacion']
+                st.markdown("### 📊 Actividad Completada")
+                st.markdown(f"<h1 style='text-align: center; color: green;'>{datos['nota']}/100</h1>", unsafe_allow_html=True)
+                st.info(f"**🗣️ Comentario del Tutor:**\n{datos['feedback']}")
+                
+                if 'nuevas_medallas' in st.session_state:
+                    st.balloons() 
+                    st.markdown("#### 🎉 ¡Has desbloqueado nuevos logros integrales en esta misión!")
+                    for clave_m in st.session_state['nuevas_medallas']:
+                        meta = MEDALLAS_MAESTRAS[clave_m]
+                        st.success(f"**{meta['icono']} {meta['titulo']}:** {meta['desc']}")
+                
+                if st.button("Regresar a Misiones", type="primary"):
+                    del st.session_state['tutoria_activa']
+                    del st.session_state['resultado_evaluacion']
+                    if 'nuevas_medallas' in st.session_state: del st.session_state['nuevas_medallas']
+                    if 'voz_utilizada_en_mision' in st.session_state: del st.session_state['voz_utilizada_en_mision']
+                    if 'evidencia_adjuntada_en_mision' in st.session_state: del st.session_state['evidencia_adjuntada_en_mision']
