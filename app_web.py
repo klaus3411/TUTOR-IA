@@ -13,7 +13,7 @@ import streamlit.components.v1 as components
 # ==========================================
 # 1. CONFIGURACIÓN INICIAL (DEBE IR PRIMERO)
 # ==========================================
-st.set_page_config(page_title="Portal Educativo - Gimnasio Bilingüe Altamar de Cartagena", page_icon="🏫", layout="centered")
+st.set_page_config(page_title="Portal Educativo - Intellectus Apex", page_icon="🏫", layout="centered")
 
 st.markdown("""
 <style>
@@ -56,11 +56,10 @@ except ImportError:
 def iniciar_sistemas():
     load_dotenv()
     supabase = create_client(os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_KEY"))
-    # Reemplazamos Groq por OpenAI
     cliente_ia = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
     modelo_vectores = SentenceTransformer('all-MiniLM-L6-v2')
     return supabase, cliente_ia, modelo_vectores
-# Actualizamos los nombres de las variables aquí también
+
 supabase, cliente_ia, modelo_vectores = iniciar_sistemas()
 
 def obtener_perfil(correo):
@@ -70,9 +69,7 @@ def obtener_perfil(correo):
 # ==========================================
 # 3. MÓDULO DE PAGOS (MERCADO PAGO)
 # ==========================================
-def crear_link_de_pago(estudiante_email, monto=80000, plan_nombre="Suscripción Tutor IA - NOVA"):
-    """Genera una preferencia de cobro por $80.000 COP."""
-    # Lee el token de las variables de entorno
+def crear_link_de_pago(estudiante_email, monto=80000, plan_nombre="Suscripción Tutor IA - Intellectus Apex"):
     token = os.environ.get("MERCADOPAGO_ACCESS_TOKEN") 
     sdk = mercadopago.SDK(token)
 
@@ -103,10 +100,9 @@ def crear_link_de_pago(estudiante_email, monto=80000, plan_nombre="Suscripción 
         raise Exception(f"Fallo al comunicarse con Mercado Pago: {e}")
 
 def mostrar_interfaz_pago(perfil_estudiante):
-    """Muro de pago para estudiantes sin suscripción activa."""
     st.markdown("<br><br>", unsafe_allow_html=True)
     st.markdown(f"<div style='text-align: center;'><img src='{URL_LOGO_COLEGIO}' width='100' style='border-radius: 50%;'></div>", unsafe_allow_html=True)
-    st.markdown("<h2 style='text-align: center;'>💳 Inscripción a NOVA Educación</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center;'>💳 Inscripción a Intellectus Apex</h2>", unsafe_allow_html=True)
     
     st.warning(f"Hola **{perfil_estudiante['nombre']}**, tu acceso al Tutor IA no está activo o ha vencido.")
     st.write("Para desbloquear tus misiones y continuar con tu aprendizaje, necesitas una suscripción activa.")
@@ -127,11 +123,10 @@ def mostrar_interfaz_pago(perfil_estudiante):
         st.rerun()
 
 # ==========================================
-# 4. MÚDULOS DE IA Y EVALUACIÓN
+# 4. MÓDULOS DE IA Y EVALUACIÓN (OPENAI)
 # ==========================================
 def transcribir_audio(audio_bytes):
     try:
-        # Cambiamos cliente_groq por cliente_ia y el modelo a whisper-1
         respuesta = cliente_ia.audio.transcriptions.create(
             file=("audio.wav", audio_bytes),
             model="whisper-1",
@@ -159,9 +154,6 @@ def evaluar_actividad(tutoria, historial_mensajes):
     rubrica = tutoria.get('rubrica') or 'Evalúa desde una perspectiva holística: sentir, pensar, actuar y convivir.'
     tarea = tutoria['mision']
     momento_pedagogico = tutoria.get('momento_pedagogico', 'General')
-    
-    tiene_imagen = any(isinstance(m['content'], list) for m in historial_mensajes)
-    modelo_eval = "llama-3.2-11b-vision-preview" if tiene_imagen else "llama-3.1-8b-instant"
     
     prompt_sistema = f"""
     Eres un profesor EVALUADOR EXPERTO EN EL MODELO HOLÍSTICO TRANSFORMADOR (MHT) evaluando la asignatura de {tutoria['asignatura']}.
@@ -192,8 +184,9 @@ def evaluar_actividad(tutoria, historial_mensajes):
         mensajes_api.append({"role": msg["role"], "content": msg["content"]})
         
     mensajes_api.append({"role": "user", "content": "Analiza paso a paso y genera la evaluación MHT en formato JSON ahora mismo."})
-opciones_api = {
-"messages": mensajes_api,
+    
+    opciones_api = {
+        "messages": mensajes_api,
         "model": "gpt-5.6-luna",
         "temperature": 0.1,
         "response_format": {"type": "json_object"}
@@ -224,7 +217,7 @@ def generar_respuesta(perfil, tutoria, pregunta_actual, historial_mensajes):
     modo_voz = tutoria.get('modo_voz', False)
 
     instrucciones = f"""ROL Y PERFIL DEL ASISTENTE:
-Eres un "Tutor Pedagógico de IA", experto en el Modelo Holístico Transformador (MHT) desarrollado por Giovanni Marcello Iafrancesco. 
+Eres el Tutor IA de Intellectus Apex, experto en el Modelo Holístico Transformador (MHT) desarrollado por Giovanni Marcello Iafrancesco. 
 Tu propósito es guiar al estudiante de manera empática, detallada y rigurosa hacia la madurez integral (sentir, pensar, actuar, vivir, convivir y emprender).
 
 DATOS DEL ALUMNO:
@@ -236,7 +229,7 @@ DATOS DEL ALUMNO:
 ENFOQUE PEDAGÓGICO DE ESTA SESIÓN:
 Estás trabajando en el momento de: **{momento_pedagogico}**.
 
-TUS BASES MHT PARA ESTE MOMENTO (Aplica el que corresponda a esta sesión):
+TUS BASES MHT PARA ESTE MOMENTO:
 1. IDENTIFICACIÓN (Sentir): Movilizar afectiva y cognitivamente. Rescatar saberes previos y emociones.
 2. CONTEXTUALIZACIÓN (Pensar): Conectar el saber técnico con el entorno real. Explicar el "para qué" sirve.
 3. APLICACIÓN (Saber Hacer): Experimentar y ejecutar de forma estructurada. Talleres y resolución guiada.
@@ -244,7 +237,7 @@ TUS BASES MHT PARA ESTE MOMENTO (Aplica el que corresponda a esta sesión):
 
 INSTRUCCIONES DE COMPORTAMIENTO:
 1. RUTA DE ACCIÓN: Empieza saludando empáticamente. Nunca des la respuesta directa; usa la mayéutica. Guía al estudiante basándote estrictamente en el "Momento Pedagógico" actual asignado a esta sesión.
-2. FORMATO DE CLASE: Si el usuario te pide una explicación detallada o una guía, estructúrala de forma impecable usando la "Plantilla Estándar de Respuesta MHT" (Título, Propósito, y los 4 momentos detallando: Objetivo, Actividad, Pregunta Detonante).
+2. FORMATO DE CLASE: Si el usuario te pide una explicación detallada o una guía, estructúrala de forma impecable usando la "Plantilla Estándar de Respuesta MHT".
 3. TONO: Motivador, empático y orientado a que descubra el "porqué" de las cosas.
 4. LÍMITES MULTIMODALES: Si el alumno sube una imagen o [DOCUMENTO PDF ADJUNTO], analízalo detalladamente usando los lentes del MHT. IMPORTANTE: Si no hay archivos, NUNCA asumas que los hay.
 """
@@ -254,9 +247,6 @@ INSTRUCCIONES DE COMPORTAMIENTO:
     else:
         instrucciones += "\n5. MODO TEXTO ACTIVADO: Tus respuestas deben ser detalladas, estructuradas de forma impecable y ricas en pedagogía holística."
 
-    tiene_imagen = any(isinstance(m['content'], list) for m in historial_mensajes[-5:])
-    modelo_chat = "llama-3.2-11b-vision-preview" if tiene_imagen else "llama-3.1-8b-instant"
-
     mensajes_api = [{"role": "system", "content": f"{instrucciones}\n\nMATERIAL DE APOYO OFICIAL:\n{texto_oficial}"}]
     
     if not historial_mensajes:
@@ -265,19 +255,18 @@ INSTRUCCIONES DE COMPORTAMIENTO:
         for msg in historial_mensajes[-8:]: 
             mensajes_api.append({"role": msg["role"], "content": msg["content"]})
 
-# Llamada a OpenAI para el chat en vivo
     respuesta_ia = cliente_ia.chat.completions.create(
         messages=mensajes_api,
-        model="gpt-5.6-luna", # Modelo único multimodal
+        model="gpt-5.6-luna",
         temperature=0.7
     )
     return respuesta_ia.choices[0].message.content
+
 
 # ==========================================
 # 5. FLUJO PRINCIPAL E INTERFAZ GRÁFICA (UI)
 # ==========================================
 
-# 5.1 LOGIN DEL SISTEMA
 if not st.session_state.get('usuario_valido', False):
     st.markdown("<br><br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -301,19 +290,21 @@ if not st.session_state.get('usuario_valido', False):
                     
         st.markdown("<br><p style='text-align: center;'><a href='/tablero_profesor' target='_self' style='color: #9CA3AF; text-decoration: none; font-size: 0.8rem;'>👨‍🏫 Acceso Docente</a></p>", unsafe_allow_html=True)
 
-# 5.2 VERIFICACIÓN DE PAGO Y DASHBOARD
 else:
     perfil_actual = st.session_state['perfil']
     
-    # --- EL MURO DE PAGO (PAYWALL) ---
-    # Extraemos el estado de la suscripción (asegurando que leemos correctamente booleanos y strings)
-    suscripcion_activa = perfil_actual.get('suscripcion_activa', False)
-    
-    # Si la suscripción NO es verdadera, bloqueamos el acceso
+    try:
+        respuesta_db = supabase.table("estudiantes").select("suscripcion_activa").eq("correo", perfil_actual['correo']).execute()
+        if respuesta_db.data:
+            suscripcion_activa = respuesta_db.data[0].get('suscripcion_activa', False)
+        else:
+            suscripcion_activa = False
+    except:
+        suscripcion_activa = False
+
     if str(suscripcion_activa).lower() != "true" and suscripcion_activa != True:
         mostrar_interfaz_pago(perfil_actual)
     
-    # --- ACCESO CONCEDIDO (Si pagó, entra aquí) ---
     else:
         if 'tutoria_activa' not in st.session_state:
             col_saludo, col_salir = st.columns([3, 1])
@@ -378,7 +369,7 @@ else:
                                 """, unsafe_allow_html=True)
                                 if st.button(f"Entrar a tutoría de {tutoria['asignatura']}", key=tutoria['id'], type="primary"):
                                     st.session_state['tutoria_activa'] = tutoria
-                                    primer_msg = f"¡Hola, {perfil_actual['nombre']}! Soy tu Tutor. Hoy trabajaremos en la fase de **{tutoria.get('momento_pedagogico', 'General')}**. Tu misión es: *{tutoria['mision']}*. ¿Comenzamos?"
+                                    primer_msg = f"¡Hola, {perfil_actual['nombre']}! Soy tu Tutor de Intellectus Apex. Hoy trabajaremos en la fase de **{tutoria.get('momento_pedagogico', 'General')}**. Tu misión es: *{tutoria['mision']}*. ¿Comenzamos?"
                                     st.session_state['mensajes'] = [{"role": "assistant", "content": primer_msg}]
                                     st.rerun()
                 except Exception as e:
@@ -425,9 +416,6 @@ else:
                 except Exception as e:
                     st.error("No se pudo cargar tu historial.")
 
-        # ------------------------------------------
-        # PANTALLA DE TUTORÍA ACTIVA (EL CHAT IA)
-        # ------------------------------------------
         else:
             tutoria_actual = st.session_state['tutoria_activa']
             modo_voz_activado = tutoria_actual.get('modo_voz', False)
@@ -608,7 +596,6 @@ else:
                                 
                                 supabase.table("tutorias").update({"estado": "completada"}).eq("id", tutoria_actual['id']).execute()
                                 
-                                # GAMIFICACIÓN
                                 medallas_desbloqueadas_ahora = []
                                 if otorgar_medalla_logica(perfil_actual['id'], "primera_mision"): medallas_desbloqueadas_ahora.append("primera_mision")
                                 if datos_evaluacion['nota'] >= 85: 
@@ -645,3 +632,4 @@ else:
                     if 'nuevas_medallas' in st.session_state: del st.session_state['nuevas_medallas']
                     if 'voz_utilizada_en_mision' in st.session_state: del st.session_state['voz_utilizada_en_mision']
                     if 'evidencia_adjuntada_en_mision' in st.session_state: del st.session_state['evidencia_adjuntada_en_mision']
+                    st.rerun()
