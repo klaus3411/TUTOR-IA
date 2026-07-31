@@ -1,6 +1,6 @@
 streamlit
 supabase
-groq
+openai
 sentence-transformers
 python-dotenv
 pandas
