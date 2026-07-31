@@ -200,9 +200,9 @@ opciones_api = {
         "response_format": {"type": "json_object"} # Obligamos a que devuelva un JSON perfecto
     }
     
-    # Llamamos a OpenAI
-    respuesta = cliente_ia.chat.completions.create(**opciones_api)
-    contenido = respuesta.choices[0].message.content
+        # Llamamos a OpenAI
+     respuesta = cliente_ia.chat.completions.create(**opciones_api)
+     contenido = respuesta.choices[0].message.content
     
     match = re.search(r'\{.*\}', contenido, re.DOTALL)
     if match:
