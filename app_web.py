@@ -246,20 +246,35 @@ def generar_respuesta(perfil, tutoria, pregunta_actual, historial_mensajes):
     if resultados.data:
         texto_oficial = resultados.data[0]["contenido_texto"]
 
+    # 🌟 NUEVO: RECUPERANDO LA MEMORIA EVOLUTIVA
+    memoria_evolutiva = "Es la primera vez que interactúas con este alumno o no hay debilidades previas registradas."
+    try:
+        # Busca la última evaluación del alumno ordenada por fecha descendente
+        res_memoria = supabase.table("evaluaciones").select("areas_mejora").eq("estudiante_id", perfil['id']).order("created_at", desc=True).limit(1).execute()
+        if res_memoria.data and res_memoria.data[0].get("areas_mejora"):
+            memoria_evolutiva = res_memoria.data[0]["areas_mejora"]
+    except Exception as e:
+        pass
+
     grado = perfil.get('grado', 'un grado escolar')
     curso = perfil.get('curso', 'N/A')
     momento_pedagogico = tutoria.get('momento_pedagogico', 'General / Ciclo Completo')
     modo_voz = tutoria.get('modo_voz', False)
 
+    # 🌟 NUEVO PROMPT: INYECTANDO LA MEMORIA EN EL MHT
     instrucciones = f"""ROL Y PERFIL DEL ASISTENTE:
-Eres el Tutor IA de Intellectus Apex, experto en el Modelo Holístico Transformador (MHT) desarrollado por Giovanni Marcello Iafrancesco. 
-Tu propósito es guiar al estudiante de manera empática, detallada y rigurosa hacia la madurez integral (sentir, pensar, actuar, vivir, convivir y emprender).
+Eres el Tutor IA de Intellectus Apex, experto en el Modelo Holístico Transformador (MHT). 
+Tu propósito es guiar al estudiante de manera empática, detallada y rigurosa hacia la madurez integral.
 
 DATOS DEL ALUMNO:
 - Asignatura: {tutoria['asignatura']}
 - Grado: {grado} (Sección {curso})
 - Complejidad: {tutoria['complejidad']}
 - MISIÓN ASIGNADA HOY: {tutoria['mision']}
+
+🧠 MEMORIA EVOLUTIVA SECRETA (¡SÚPER IMPORTANTE!):
+En su última evaluación, este alumno presentó la siguiente área de mejora: "{memoria_evolutiva}".
+Tu deber pedagógico es guiar la conversación de hoy (usando la mayéutica) para verificar sutilmente si ha superado esta debilidad. NO le digas directamente "vi que fallaste en esto la vez pasada", integra este reto de forma invisible en tus explicaciones y preguntas de hoy.
 
 ENFOQUE PEDAGÓGICO DE ESTA SESIÓN:
 Estás trabajando en el momento de: **{momento_pedagogico}**.
@@ -296,7 +311,6 @@ INSTRUCCIONES DE COMPORTAMIENTO:
         temperature=0.7
     )
     return respuesta_ia.choices[0].message.content
-
 
 # ==========================================
 # 5. FLUJO PRINCIPAL E INTERFAZ GRÁFICA (UI)
@@ -618,14 +632,15 @@ else:
                                 for m in st.session_state.mensajes:
                                     mensaje_copia = {"role": m["role"], "content": m["content"]}
                                     historial_limpio_para_db.append(mensaje_copia)
-                                    
-                                historial_completo = json.dumps(historial_limpio_para_db, ensure_ascii=False, indent=4)
+                              historial_completo = json.dumps(historial_limpio_para_db, ensure_ascii=False, indent=4)
                                 
+                                # ❌ REEMPLAZA TU INSERT ACTUAL POR ESTE:
                                 supabase.table("evaluaciones").insert({
                                     "estudiante_id": perfil_actual['id'],
                                     "tarea": tutoria_actual['mision'],
                                     "nota": datos_evaluacion['nota'],
                                     "feedback": datos_evaluacion['feedback'],
+                                    "areas_mejora": datos_evaluacion['areas_mejora'], # 🌟 AQUÍ GUARDAMOS LA MEMORIA
                                     "historial_evidencia": historial_completo
                                 }).execute()
                                 
