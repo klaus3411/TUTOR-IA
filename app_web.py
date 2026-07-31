@@ -187,7 +187,7 @@ def evaluar_actividad(tutoria, historial_mensajes):
     
     opciones_api = {
         "messages": mensajes_api,
-        "model": "gpt-5.6-luna",
+        "model": "gpt-4o-mini",
         "temperature": 0.1,
         "response_format": {"type": "json_object"}
     }
@@ -257,7 +257,7 @@ INSTRUCCIONES DE COMPORTAMIENTO:
 
     respuesta_ia = cliente_ia.chat.completions.create(
         messages=mensajes_api,
-        model="gpt-5.6-luna",
+        model="gpt-4o-mini",
         temperature=0.7
     )
     return respuesta_ia.choices[0].message.content
