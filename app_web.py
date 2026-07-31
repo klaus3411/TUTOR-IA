@@ -175,7 +175,6 @@ def evaluar_actividad(tutoria, historial_mensajes):
         
     mensajes_api.append({"role": "user", "content": "Analiza paso a paso y genera la evaluación MHT ahora mismo."})
     
-    # NUEVO: Molde Estricto (Structured Outputs)
     molde_json = {
         "type": "json_schema",
         "json_schema": {
@@ -221,6 +220,56 @@ def evaluar_actividad(tutoria, historial_mensajes):
     respuesta = cliente_ia.chat.completions.create(**opciones_api)
     return respuesta.choices[0].message.content
 
+def generar_examen_sintesis(asignatura, tareas_previas, areas_mejora):
+    instrucciones = f"""
+    Eres el Evaluador MHT del Gimnasio Bilingüe Altamar de Cartagena. Crea un 'Reto de Síntesis' (Examen de 3 preguntas de opción múltiple) de la asignatura {asignatura}.
+    El alumno ha completado estas misiones recientes: {tareas_previas}.
+    ATENCIÓN A LA MEMORIA EVOLUTIVA: En sus evaluaciones pasadas, el alumno demostró esta debilidad: "{areas_mejora}".
+    Debes crear preguntas aplicadas al entorno de estudio y uso de IA. Al menos una pregunta debe poner a prueba su debilidad histórica de forma directa.
+    """
+    molde_examen = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "examen_sintesis",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "preguntas": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "enunciado": {"type": "string"},
+                                "opcion_a": {"type": "string"},
+                                "opcion_b": {"type": "string"},
+                                "opcion_c": {"type": "string"},
+                                "opcion_d": {"type": "string"},
+                                "respuesta_correcta": {"type": "string", "enum": ["A", "B", "C", "D"]},
+                                "justificacion": {"type": "string", "description": "Por qué esta es la respuesta correcta bajo la visión MHT"}
+                            },
+                            "required": ["enunciado", "opcion_a", "opcion_b", "opcion_c", "opcion_d", "respuesta_correcta", "justificacion"],
+                            "additionalProperties": False
+                        }
+                    }
+                },
+                "required": ["preguntas"],
+                "additionalProperties": False
+            }
+        }
+    }
+    
+    respuesta = cliente_ia.chat.completions.create(
+        messages=[
+            {"role": "system", "content": instrucciones},
+            {"role": "user", "content": "Genera el examen de 3 preguntas en formato JSON estricto ahora mismo."}
+        ],
+        model="gpt-4o-mini",
+        temperature=0.3,
+        response_format=molde_examen
+    )
+    return respuesta.choices[0].message.content
+
 def generar_respuesta(perfil, tutoria, pregunta_actual, historial_mensajes):
     texto_busqueda = str(pregunta_actual)
     vector_pregunta = modelo_vectores.encode(texto_busqueda).tolist()
@@ -232,7 +281,6 @@ def generar_respuesta(perfil, tutoria, pregunta_actual, historial_mensajes):
     if resultados.data:
         texto_oficial = resultados.data[0]["contenido_texto"]
 
-    # NUEVO: RECUPERANDO LA MEMORIA EVOLUTIVA
     memoria_evolutiva = "Es la primera vez que interactúas con este alumno o no hay debilidades previas registradas."
     try:
         res_memoria = supabase.table("evaluaciones").select("areas_mejora").eq("estudiante_id", perfil['id']).order("created_at", desc=True).limit(1).execute()
@@ -338,333 +386,458 @@ else:
 
     if str(suscripcion_activa).lower() != "true" and suscripcion_activa != True:
         mostrar_interfaz_pago(perfil_actual)
-    
-    else:
-        if 'tutoria_activa' not in st.session_state:
-            col_saludo, col_salir = st.columns([3, 1])
-            with col_saludo:
-                st.markdown(f"### 👋 Hola, {perfil_actual['nombre']}")
-            with col_salir:
-                if st.button("🚪 Salir", use_container_width=True):
-                    st.session_state.clear()
+
+    # -----------------------------------------------------------
+    # NUEVO: ESTADO DE EXAMEN DINÁMICO DE SÍNTESIS (BOSS FIGHT)
+    # -----------------------------------------------------------
+    elif 'reto_activo' in st.session_state:
+        reto = st.session_state['reto_activo']
+        st.markdown(f"## ⚔️ Reto de Síntesis: Nivel {reto['nivel']} de {reto['asignatura']}")
+        st.info("Este reto ha sido diseñado exclusivamente para ti, analizando tu historial de misiones pasadas.")
+        
+        if 'examen_json' not in st.session_state:
+            with st.spinner("🧠 Diseñando tu examen personalizado basado en tu memoria evolutiva..."):
+                try:
+                    res_mem = supabase.table("evaluaciones").select("areas_mejora").eq("estudiante_id", perfil_actual['id']).order("created_at", desc=True).limit(1).execute()
+                    debilidad = res_mem.data[0]['areas_mejora'] if res_mem.data else "Ninguna debilidad detectada"
+                    
+                    examen_str = generar_examen_sintesis(reto['asignatura'], reto['misiones'], debilidad)
+                    st.session_state['examen_json'] = json.loads(examen_str)
                     st.rerun()
-                    
-            st.divider()
-            tab_misiones, tab_rendimiento = st.tabs(["🎮 Mis Misiones", "📊 Mi Rendimiento"])
-            
-            with tab_misiones:
-                try:
-                    res_med_db = supabase.table("medallas_ganadas").select("medalla_clave").eq("estudiante_id", perfil_actual['id']).execute()
-                    claves_ganadas = [registro['medalla_clave'] for registro in res_med_db.data] if res_med_db.data else []
-                    
-                    st.markdown("#### 🏆 Tus Logros Académicos")
-                    columnas_medallas = st.columns(len(MEDALLAS_MAESTRAS))
-                    for index, (clave, metadatos) in enumerate(MEDALLAS_MAESTRAS.items()):
-                        with columnas_medallas[index]:
-                            if clave in claves_ganadas:
-                                st.markdown(f"""
-                                <div style="text-align: center; background-color: #f0fdf4; border: 2px solid #22c55e; padding: 12px; border-radius: 12px; min-height: 140px;">
-                                    <span style="font-size: 2.2rem;">{metadatos['icono']}</span><br>
-                                    <b style="font-size: 0.8rem; color: #166534; display: block; margin-top: 5px;">{metadatos['titulo']}</b>
-                                    <p style="font-size: 0.65rem; color: #15803d; margin: 5px 0 0 0; line-height: 1.1;">{metadatos['desc']}</p>
-                                </div>
-                                """, unsafe_allow_html=True)
-                            else:
-                                st.markdown(f"""
-                                <div style="text-align: center; background-color: #f8fafc; border: 2px dashed #cbd5e1; padding: 12px; border-radius: 12px; min-height: 140px; opacity: 0.45;">
-                                    <span style="font-size: 2.2rem; filter: grayscale(100%);">🔒</span><br>
-                                    <b style="font-size: 0.8rem; color: #64748b; display: block; margin-top: 5px;">Bloqueado</b>
-                                    <p style="font-size: 0.65rem; color: #94a3b8; margin: 5px 0 0 0; line-height: 1.1;">{metadatos['desc']}</p>
-                                </div>
-                                """, unsafe_allow_html=True)
-                    st.write("")
-                except:
-                    pass
-
-                st.subheader("📚 Tus Tutorías Pendientes")
-                try:
-                    res_tutorias = supabase.table("tutorias").select("*").eq("estudiante_id", perfil_actual['id']).eq("estado", "pendiente").execute()
-                    tutorias_pendientes = res_tutorias.data
-                    
-                    if not tutorias_pendientes:
-                        st.success("¡Felicidades! No tienes tutorías pendientes. Eres libre. 🎉")
-                    else:
-                        for tutoria in tutorias_pendientes:
-                            with st.container():
-                                icono_voz = " 🎙️ (Misión con Voz)" if tutoria.get('modo_voz', False) else ""
-                                momento_badge = f"<span style='background:#e0e7ff; color:#3730a3; padding:3px 8px; border-radius:12px; font-size:0.7rem;'>Fase: {tutoria.get('momento_pedagogico', 'General')}</span>"
-                                
-                                st.markdown(f"""
-                                <div style="background-color: #f3f4f6; padding: 20px; border-radius: 10px; margin-bottom: 10px; border-left: 5px solid #4F46E5;">
-                                    <h3 style="margin-top: 0;">📘 {tutoria['asignatura']}{icono_voz}</h3>
-                                    {momento_badge}
-                                    <p style="margin-top:10px;"><b>Misión:</b> {tutoria['mision']}</p>
-                                </div>
-                                """, unsafe_allow_html=True)
-                                if st.button(f"Entrar a tutoría de {tutoria['asignatura']}", key=tutoria['id'], type="primary"):
-                                    st.session_state['tutoria_activa'] = tutoria
-                                    primer_msg = f"¡Hola, {perfil_actual['nombre']}! Soy tu Tutor de Intellectus Apex. Hoy trabajaremos en la fase de **{tutoria.get('momento_pedagogico', 'General')}**. Tu misión es: *{tutoria['mision']}*. ¿Comenzamos?"
-                                    st.session_state['mensajes'] = [{"role": "assistant", "content": primer_msg}]
-                                    st.rerun()
                 except Exception as e:
-                    st.error("Error al cargar las tutorías.")
-
-            with tab_rendimiento:
-                st.markdown("#### 📈 Resumen de tu Desempeño Holístico")
-                try:
-                    res_eval = supabase.table("evaluaciones").select("*").eq("estudiante_id", perfil_actual['id']).order("created_at", desc=True).execute()
-                    historial_evaluaciones = res_eval.data
-                    
-                    if not historial_evaluaciones:
-                        st.info("Aún no tienes calificaciones registradas. ¡Completa tu primera misión para ver tus notas aquí!")
-                    else:
-                        total_misiones = len(historial_evaluaciones)
-                        promedio = sum(item['nota'] for item in historial_evaluaciones) / total_misiones
-                        
-                        col_prom, col_total = st.columns(2)
-                        with col_prom:
-                            st.markdown(f"""
-                            <div style="text-align: center; background-color: #eff6ff; padding: 15px; border-radius: 10px; border: 1px solid #bfdbfe;">
-                                <p style="color: #1e3a8a; font-weight: bold; margin: 0;">Desempeño Integral</p>
-                                <h2 style="color: #2563eb; margin: 0;">{promedio:.1f} <span style="font-size: 1rem; color: #60a5fa;">/100</span></h2>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        with col_total:
-                            st.markdown(f"""
-                            <div style="text-align: center; background-color: #fef2f2; padding: 15px; border-radius: 10px; border: 1px solid #fecaca;">
-                                <p style="color: #7f1d1d; font-weight: bold; margin: 0;">Retos Completados</p>
-                                <h2 style="color: #dc2626; margin: 0;">{total_misiones}</h2>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            
-                        st.divider()
-                        st.markdown("#### 📖 Historial de Retroalimentaciones")
-                        
-                        for evaluacion in historial_evaluaciones:
-                            fecha_corta = evaluacion['created_at'][:10]
-                            nota = evaluacion['nota']
-                            color_nota = "🟢" if nota >= 85 else "🟡" if nota >= 60 else "🔴"
-                            with st.expander(f"{color_nota} {fecha_corta} | {evaluacion['tarea']} - Nota: {nota}/100"):
-                                st.markdown(f"**🗣️ Guía Pedagógica del Tutor:**")
-                                st.info(evaluacion['feedback'])
-                except Exception as e:
-                    st.error("No se pudo cargar tu historial.")
-
+                    st.error(f"Error conectando con OpenAI para generar el examen: {e}")
         else:
-            tutoria_actual = st.session_state['tutoria_activa']
-            modo_voz_activado = tutoria_actual.get('modo_voz', False)
+            examen_datos = st.session_state['examen_json']['preguntas']
+            respuestas_usuario = {}
             
-            if modo_voz_activado:
-                st.markdown(f"""
-                <style>
-                    @keyframes pulse-red {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.3; }} 100% {{ opacity: 1; }} }}
-                    @keyframes float-window {{ 0% {{ transform: translateY(0px); }} 50% {{ transform: translateY(-8px); }} 100% {{ transform: translateY(0px); }} }}
-                    .floating-pip {{ position: fixed; top: 80px; right: 20px; width: 130px; height: 180px; border-radius: 16px; box-shadow: 0px 10px 30px rgba(0,0,0,0.3); border: 3px solid #4F46E5; z-index: 999999; overflow: hidden; background-color: #000; animation: float-window 4s ease-in-out infinite; }}
-                    .floating-pip img {{ width: 100%; height: 100%; object-fit: cover; }}
-                    .live-badge {{ position: absolute; top: 8px; right: 8px; background-color: #ef4444; color: white; font-size: 0.6rem; font-weight: bold; padding: 3px 8px; border-radius: 12px; z-index: 2; animation: pulse-red 1.5s infinite; box-shadow: 0px 2px 5px rgba(0,0,0,0.5); display: none; }}
-                </style>
-                <div class="floating-pip" id="pip-container">
-                    <div class="live-badge" id="live-badge-ui">🔴 LIVE</div>
-                    <img id="tutor-avatar-ui" src="{URL_AVATAR_SILENCIO}">
-                </div>
-                """, unsafe_allow_html=True)
-
-            col_back, col_title = st.columns([1, 4])
-            with col_back:
-                if st.button("⬅️ Salir", use_container_width=True):
-                    del st.session_state['tutoria_activa']
-                    if 'resultado_evaluacion' in st.session_state: del st.session_state['resultado_evaluacion']
-                    st.rerun()
-            with col_title:
-                st.success(f"🎯 **{tutoria_actual['asignatura']} | Fase: {tutoria_actual.get('momento_pedagogico', 'General')}**")
-
-            if 'resultado_evaluacion' not in st.session_state:
-                for index, mensaje in enumerate(st.session_state.mensajes):
-                    avatar_icon = "🧑‍🎓" if mensaje["role"] == "user" else URL_LOGO_COLEGIO
-                    with st.chat_message(mensaje["role"], avatar=avatar_icon):
-                        if isinstance(mensaje["content"], list):
-                            for item in mensaje["content"]:
-                                if item["type"] == "text":
-                                    st.markdown(item["text"])
-                                elif item["type"] == "image_url":
-                                    b64_img = item["image_url"]["url"].split(",")[1]
-                                    st.image(base64.b64decode(b64_img), width=350)
-                        else:
-                            if "[DOCUMENTO PDF ADJUNTO]:" in mensaje["content"]:
-                                partes = mensaje["content"].split("[DOCUMENTO PDF ADJUNTO]:")
-                                st.markdown(partes[0].strip())
-                                with st.expander("📄 Documento PDF Adjunto (Texto Extraído)"):
-                                    st.text(partes[1].strip())
-                            else:
-                                st.markdown(mensaje["content"])
-                                
-                        if mensaje.get("audio_bytes"):
-                            es_el_ultimo = (index == len(st.session_state.mensajes) - 1)
-                            b64_audio = base64.b64encode(mensaje["audio_bytes"]).decode()
-                            codigo_reproductor_inteligente = f"""
-                            <audio id="audio-{index}" controls {"autoplay" if es_el_ultimo else ""} style="width: 100%; height: 45px; outline: none; border-radius: 10px;">
-                                <source src="data:audio/mp3;base64,{b64_audio}" type="audio/mp3">
-                            </audio>
-                            <script>
-                                (function() {{
-                                    const audio = document.getElementById('audio-{index}');
-                                    const parentDoc = window.parent.document;
-                                    const avatar = parentDoc.getElementById('tutor-avatar-ui');
-                                    const badge = parentDoc.getElementById('live-badge-ui');
-                                    if (avatar && audio) {{
-                                        audio.onplay = () => {{ avatar.src = "{URL_AVATAR_HABLANDO}"; if (badge) badge.style.display = 'block'; }};
-                                        audio.onended = () => {{ avatar.src = "{URL_AVATAR_SILENCIO}"; if (badge) badge.style.display = 'none'; }};
-                                        audio.onpause = audio.onended;
-                                    }}
-                                }})();
-                            </script>
-                            """
-                            components.html(codigo_reproductor_inteligente, height=60)
-
-                col_doc, col_voz = st.columns([1, 1])
-                with col_doc:
-                    with st.expander("📎 Adjuntar PDF / Imagen"):
-                        archivo_subido = st.file_uploader("Sube y escribe abajo para enviar.", type=["pdf", "png", "jpg", "jpeg", "webp"], label_visibility="collapsed")
-                        if archivo_subido:
-                            st.success("Archivo listo.")
+            with st.form("form_examen_sintesis"):
+                for idx, preg in enumerate(examen_datos):
+                    st.markdown(f"### Pregunta {idx + 1}")
+                    st.write(preg['enunciado'])
+                    opciones = [
+                        f"A) {preg['opcion_a']}",
+                        f"B) {preg['opcion_b']}",
+                        f"C) {preg['opcion_c']}",
+                        f"D) {preg['opcion_d']}"
+                    ]
+                    respuestas_usuario[idx] = st.radio("Selecciona tu respuesta:", opciones, key=f"q_{idx}")
+                    st.divider()
                 
-                with col_voz:
-                    with st.expander("🎙️ Enviar nota de voz"):
-                        if VOZ_DISPONIBLE:
-                            st.markdown(f"<p style='font-size:0.8rem; text-align:center;'>Usa la grabadora a continuación para hablar.</p>", unsafe_allow_html=True)
-                            grabacion = st.audio_input("Graba tu mensaje", label_visibility="collapsed")
-                            if grabacion is not None:
-                                audio_bytes = grabacion.getvalue()
-                                if audio_bytes != st.session_state.get('ultimo_audio'):
-                                    st.session_state['ultimo_audio'] = audio_bytes
-                                    st.markdown(f"<p style='text-align:center;'>⏳ Escuchando tu nota de voz...</p>", unsafe_allow_html=True)
-                                    texto_voz = transcribir_audio(audio_bytes)
-                                    st.session_state['mensaje_voz_pendiente'] = texto_voz
-                                    st.rerun() 
-                        else:
-                            st.warning("⚠️ La librería gTTS no está instalada.")
-
-                pregunta_escrita = st.chat_input("Escribe tu mensaje para enviar...")
-                pregunta_voz = st.session_state.get('mensaje_voz_pendiente')
-                pregunta = pregunta_escrita or pregunta_voz
-
-                if pregunta:
-                    if pregunta_voz: del st.session_state['mensaje_voz_pendiente']
-                    contenido_final = pregunta
-                    texto_pdf_extraido = ""
+                if st.form_submit_button("Subir Respuestas y Finalizar Nivel", type="primary", use_container_width=True):
+                    puntaje = 0
+                    feedback_examen = ""
+                    for i, p in enumerate(examen_datos):
+                        letra_elegida = respuestas_usuario[i][0] # Toma la letra inicial (A, B, C o D)
+                        if letra_elegida == p['respuesta_correcta']:
+                            puntaje += 1
+                        feedback_examen += f"- **Pregunta {i+1}:** La correcta era la **{p['respuesta_correcta']}**. *{p['justificacion']}*\n"
                     
-                    if archivo_subido is not None:
-                        st.session_state['evidencia_adjuntada_en_mision'] = True
-                        if archivo_subido.type == "application/pdf":
-                            if PDF_DISPONIBLE:
-                                try:
-                                    lector = PdfReader(archivo_subido)
-                                    texto_pdf_extraido = "\n".join([pagina.extract_text() for pagina in lector.pages])
-                                    contenido_final = f"{pregunta}\n\n[DOCUMENTO PDF ADJUNTO]:\n{texto_pdf_extraido}"
-                                    st.session_state.mensajes.append({"role": "user", "content": contenido_final})
-                                except Exception as e:
-                                    st.error(f"Error al leer PDF: {e}")
-                                    st.session_state.mensajes.append({"role": "user", "content": pregunta})
-                        elif archivo_subido.type.startswith("image/"):
-                            bytes_data = archivo_subido.getvalue()
-                            base64_encoded = base64.b64encode(bytes_data).decode('utf-8')
-                            contenido_final = [
-                                {"type": "text", "text": pregunta},
-                                {"type": "image_url", "image_url": {"url": f"data:{archivo_subido.type};base64,{base64_encoded}"}}
-                            ]
-                            st.session_state.mensajes.append({"role": "user", "content": contenido_final})
-                    else:
-                        st.session_state.mensajes.append({"role": "user", "content": contenido_final})
-
-                    if pregunta_voz:
-                        st.session_state['voz_utilizada_en_mision'] = True
-
-                    with st.chat_message("assistant", avatar=URL_LOGO_COLEGIO):
-                        st.markdown(f"<p>Pensando...</p>", unsafe_allow_html=True)
-                        
-                        respuesta = generar_respuesta(perfil_actual, tutoria_actual, pregunta, st.session_state.mensajes)
-                        audio_generado = None
-                        if VOZ_DISPONIBLE and modo_voz_activado:
-                            try:
-                                tts = gTTS(respuesta, lang='es', tld='com.mx')
-                                fp = io.BytesIO()
-                                tts.write_to_fp(fp)
-                                audio_generado = fp.getvalue()
-                            except:
-                                pass 
+                    nota_final = int((puntaje / len(examen_datos)) * 100)
                     
-                    st.session_state.mensajes.append({
-                        "role": "assistant", 
-                        "content": respuesta,
-                        "audio_bytes": audio_generado 
-                    })
-                    st.rerun() 
-
-                st.divider()
-                ha_interactuado = len(st.session_state.mensajes) > 1
-                if not ha_interactuado:
-                    st.info("💡 Escribe al menos un mensaje o sube un archivo antes de entregar.")
-
-                col_vacia, col_boton = st.columns([2, 1])
-                with col_boton:
-                    if st.button("📤 Entregar Actividad", type="primary", use_container_width=True, disabled=not ha_interactuado):
-                        with st.spinner("🧑‍🏫 Evaluando de forma Holística..."):
-                            try:
-                                resultado_json_str = evaluar_actividad(tutoria_actual, st.session_state.mensajes)
-                                datos_evaluacion = json.loads(resultado_json_str)
-                                
-                                historial_limpio_para_db = []
-                                for m in st.session_state.mensajes:
-                                    mensaje_copia = {"role": m["role"], "content": m["content"]}
-                                    historial_limpio_para_db.append(mensaje_copia)
-                                    
-                                historial_completo = json.dumps(historial_limpio_para_db, ensure_ascii=False, indent=4)
-                                
-                                supabase.table("evaluaciones").insert({
-                                    "estudiante_id": perfil_actual['id'],
-                                    "tarea": tutoria_actual['mision'],
-                                    "nota": datos_evaluacion['nota'],
-                                    "feedback": datos_evaluacion['feedback'],
-                                    "areas_mejora": datos_evaluacion['areas_mejora'],
-                                    "historial_evidencia": historial_completo
-                                }).execute()
-                                
-                                supabase.table("tutorias").update({"estado": "completada"}).eq("id", tutoria_actual['id']).execute()
-                                
-                                medallas_desbloqueadas_ahora = []
-                                if otorgar_medalla_logica(perfil_actual['id'], "primera_mision"): medallas_desbloqueadas_ahora.append("primera_mision")
-                                if datos_evaluacion['nota'] >= 85: 
-                                    if otorgar_medalla_logica(perfil_actual['id'], "mente_brillante"): medallas_desbloqueadas_ahora.append("mente_brillante")
-                                if datos_evaluacion['nota'] == 100:
-                                    if otorgar_medalla_logica(perfil_actual['id'], "perfeccion"): medallas_desbloqueadas_ahora.append("perfeccion")
-                                if st.session_state.get('voz_utilizada_en_mision', False) or modo_voz_activado:
-                                    if otorgar_medalla_logica(perfil_actual['id'], "audiofilo"): medallas_desbloqueadas_ahora.append("audiofilo")
-                                if st.session_state.get('evidencia_adjuntada_en_mision', False):
-                                    if otorgar_medalla_logica(perfil_actual['id'], "investigador"): medallas_desbloqueadas_ahora.append("investigador")
-                                
-                                if medallas_desbloqueadas_ahora: st.session_state['nuevas_medallas'] = medallas_desbloqueadas_ahora
-                                st.session_state['resultado_evaluacion'] = datos_evaluacion
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Error: {e}")
-            
+                    # Guardamos el resultado en la nueva tabla
+                    try:
+                        supabase.table("retos_sintesis").insert({
+                            "estudiante_id": perfil_actual['id'],
+                            "asignatura": reto['asignatura'],
+                            "nivel": reto['nivel'],
+                            "nota": nota_final
+                        }).execute()
+                    except Exception as e:
+                        pass # Si la tabla no está creada aún en Supabase, simplemente no guarda pero muestra la nota
+                    
+                    st.session_state['resultado_examen'] = {"nota": nota_final, "feedback": feedback_examen}
+                    st.rerun()
+                    
+        # Mostrar resultado del examen
+        if 'resultado_examen' in st.session_state:
+            res = st.session_state['resultado_examen']
+            if res['nota'] >= 60:
+                st.balloons()
+                st.success(f"### ¡Reto Completado con Éxito! Tu nota: {res['nota']}/100")
             else:
-                datos = st.session_state['resultado_evaluacion']
-                st.markdown("### 📊 Actividad Completada")
-                st.markdown(f"<h1 style='text-align: center; color: green;'>{datos['nota']}/100</h1>", unsafe_allow_html=True)
-                st.info(f"**🗣️ Comentario del Tutor:**\n{datos['feedback']}")
+                st.error(f"### Reto Finalizado. Tu nota: {res['nota']}/100. Sigue esforzándote.")
                 
-                if 'nuevas_medallas' in st.session_state:
-                    st.balloons() 
-                    st.markdown("#### 🎉 ¡Has desbloqueado nuevos logros integrales en esta misión!")
-                    for clave_m in st.session_state['nuevas_medallas']:
-                        meta = MEDALLAS_MAESTRAS[clave_m]
-                        st.success(f"**{meta['icono']} {meta['titulo']}:** {meta['desc']}")
+            st.info(f"**Análisis Pedagógico (MHT):**\n{res['feedback']}")
+            if st.button("Volver al Dashboard Principal", use_container_width=True):
+                del st.session_state['reto_activo']
+                del st.session_state['examen_json']
+                del st.session_state['resultado_examen']
+                st.rerun()
+
+    # -----------------------------------------------------------
+    # DASHBOARD PRINCIPAL (Si no hay examen ni tutoría activa)
+    # -----------------------------------------------------------
+    elif 'tutoria_activa' not in st.session_state:
+        col_saludo, col_salir = st.columns([3, 1])
+        with col_saludo:
+            st.markdown(f"### 👋 Hola, {perfil_actual['nombre']}")
+        with col_salir:
+            if st.button("🚪 Salir", use_container_width=True):
+                st.session_state.clear()
+                st.rerun()
                 
-                if st.button("Regresar a Misiones", type="primary"):
-                    del st.session_state['tutoria_activa']
-                    del st.session_state['resultado_evaluacion']
-                    if 'nuevas_medallas' in st.session_state: del st.session_state['nuevas_medallas']
-                    if 'voz_utilizada_en_mision' in st.session_state: del st.session_state['voz_utilizada_en_mision']
-                    if 'evidencia_adjuntada_en_mision' in st.session_state: del st.session_state['evidencia_adjuntada_en_mision']
-                    st.rerun()
+        st.divider()
+        tab_misiones, tab_rendimiento = st.tabs(["🎮 Mis Misiones", "📊 Mi Rendimiento"])
+        
+        with tab_misiones:
+            # 1. Sistema de Medallas
+            try:
+                res_med_db = supabase.table("medallas_ganadas").select("medalla_clave").eq("estudiante_id", perfil_actual['id']).execute()
+                claves_ganadas = [registro['medalla_clave'] for registro in res_med_db.data] if res_med_db.data else []
+                
+                st.markdown("#### 🏆 Tus Logros Académicos")
+                columnas_medallas = st.columns(len(MEDALLAS_MAESTRAS))
+                for index, (clave, metadatos) in enumerate(MEDALLAS_MAESTRAS.items()):
+                    with columnas_medallas[index]:
+                        if clave in claves_ganadas:
+                            st.markdown(f"""
+                            <div style="text-align: center; background-color: #f0fdf4; border: 2px solid #22c55e; padding: 12px; border-radius: 12px; min-height: 140px;">
+                                <span style="font-size: 2.2rem;">{metadatos['icono']}</span><br>
+                                <b style="font-size: 0.8rem; color: #166534; display: block; margin-top: 5px;">{metadatos['titulo']}</b>
+                                <p style="font-size: 0.65rem; color: #15803d; margin: 5px 0 0 0; line-height: 1.1;">{metadatos['desc']}</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"""
+                            <div style="text-align: center; background-color: #f8fafc; border: 2px dashed #cbd5e1; padding: 12px; border-radius: 12px; min-height: 140px; opacity: 0.45;">
+                                <span style="font-size: 2.2rem; filter: grayscale(100%);">🔒</span><br>
+                                <b style="font-size: 0.8rem; color: #64748b; display: block; margin-top: 5px;">Bloqueado</b>
+                                <p style="font-size: 0.65rem; color: #94a3b8; margin: 5px 0 0 0; line-height: 1.1;">{metadatos['desc']}</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                st.write("")
+            except:
+                pass
+
+            # 2. NUEVO: Lógica para lanzar el Reto de Síntesis cada 3 misiones
+            try:
+                # Contamos las misiones completadas por asignatura
+                res_comp = supabase.table("tutorias").select("asignatura, mision").eq("estudiante_id", perfil_actual['id']).eq("estado", "completada").execute()
+                misiones_por_asig = {}
+                for c in res_comp.data:
+                    asig = c['asignatura']
+                    if asig not in misiones_por_asig: 
+                        misiones_por_asig[asig] = []
+                    misiones_por_asig[asig].append(c['mision'])
+                
+                # Verificamos qué exámenes ya ha hecho en la tabla retos_sintesis
+                res_exam = supabase.table("retos_sintesis").select("asignatura, nivel").eq("estudiante_id", perfil_actual['id']).execute()
+                niveles_superados = {}
+                for e in res_exam.data:
+                    subj = e['asignatura']
+                    lvl = e['nivel']
+                    if subj not in niveles_superados or lvl > niveles_superados[subj]: 
+                        niveles_superados[subj] = lvl
+
+                # Evaluamos si le toca un examen (Cada 3 misiones completadas = 1 Nivel)
+                for asignatura, lista_misiones in misiones_por_asig.items():
+                    nivel_posible = len(lista_misiones) // 3
+                    if nivel_posible > niveles_superados.get(asignatura, 0) and nivel_posible > 0:
+                        st.markdown(f"""
+                        <div style="background-color: #fef2f2; border: 2px solid #ef4444; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
+                            <h3 style="color: #b91c1c; margin-top: 0;">🔥 ALERTA: Reto de Síntesis Desbloqueado</h3>
+                            <p style="color: #7f1d1d;">Has completado {len(lista_misiones)} misiones de <b>{asignatura}</b>. Es hora de poner a prueba tu madurez integral generándote un examen personalizado.</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        if st.button(f"⚔️ Iniciar Reto de Nivel {nivel_posible} ({asignatura})", type="primary", use_container_width=True):
+                            st.session_state['reto_activo'] = {
+                                "asignatura": asignatura, 
+                                "nivel": nivel_posible, 
+                                "misiones": ", ".join(lista_misiones[-3:])
+                            }
+                            st.rerun()
+            except Exception as e: 
+                pass # Si la tabla retos_sintesis aún no existe, esto evita que la app se caiga
+
+            # 3. Tutorías Pendientes (El flujo normal)
+            st.subheader("📚 Tus Tutorías Pendientes")
+            try:
+                res_tutorias = supabase.table("tutorias").select("*").eq("estudiante_id", perfil_actual['id']).eq("estado", "pendiente").execute()
+                tutorias_pendientes = res_tutorias.data
+                
+                if not tutorias_pendientes:
+                    st.success("¡Felicidades! No tienes tutorías pendientes. Eres libre. 🎉")
+                else:
+                    for tutoria in tutorias_pendientes:
+                        with st.container():
+                            icono_voz = " 🎙️ (Misión con Voz)" if tutoria.get('modo_voz', False) else ""
+                            momento_badge = f"<span style='background:#e0e7ff; color:#3730a3; padding:3px 8px; border-radius:12px; font-size:0.7rem;'>Fase: {tutoria.get('momento_pedagogico', 'General')}</span>"
+                            
+                            st.markdown(f"""
+                            <div style="background-color: #f3f4f6; padding: 20px; border-radius: 10px; margin-bottom: 10px; border-left: 5px solid #4F46E5;">
+                                <h3 style="margin-top: 0;">📘 {tutoria['asignatura']}{icono_voz}</h3>
+                                {momento_badge}
+                                <p style="margin-top:10px;"><b>Misión:</b> {tutoria['mision']}</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            if st.button(f"Entrar a tutoría de {tutoria['asignatura']}", key=tutoria['id'], type="primary"):
+                                st.session_state['tutoria_activa'] = tutoria
+                                primer_msg = f"¡Hola, {perfil_actual['nombre']}! Soy tu Tutor de Intellectus Apex. Hoy trabajaremos en la fase de **{tutoria.get('momento_pedagogico', 'General')}**. Tu misión es: *{tutoria['mision']}*. ¿Comenzamos?"
+                                st.session_state['mensajes'] = [{"role": "assistant", "content": primer_msg}]
+                                st.rerun()
+            except Exception as e:
+                st.error("Error al cargar las tutorías.")
+
+        with tab_rendimiento:
+            st.markdown("#### 📈 Resumen de tu Desempeño Holístico")
+            try:
+                res_eval = supabase.table("evaluaciones").select("*").eq("estudiante_id", perfil_actual['id']).order("created_at", desc=True).execute()
+                historial_evaluaciones = res_eval.data
+                
+                if not historial_evaluaciones:
+                    st.info("Aún no tienes calificaciones registradas. ¡Completa tu primera misión para ver tus notas aquí!")
+                else:
+                    total_misiones = len(historial_evaluaciones)
+                    promedio = sum(item['nota'] for item in historial_evaluaciones) / total_misiones
+                    
+                    col_prom, col_total = st.columns(2)
+                    with col_prom:
+                        st.markdown(f"""
+                        <div style="text-align: center; background-color: #eff6ff; padding: 15px; border-radius: 10px; border: 1px solid #bfdbfe;">
+                            <p style="color: #1e3a8a; font-weight: bold; margin: 0;">Desempeño Integral</p>
+                            <h2 style="color: #2563eb; margin: 0;">{promedio:.1f} <span style="font-size: 1rem; color: #60a5fa;">/100</span></h2>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with col_total:
+                        st.markdown(f"""
+                        <div style="text-align: center; background-color: #fef2f2; padding: 15px; border-radius: 10px; border: 1px solid #fecaca;">
+                            <p style="color: #7f1d1d; font-weight: bold; margin: 0;">Retos Completados</p>
+                            <h2 style="color: #dc2626; margin: 0;">{total_misiones}</h2>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                    st.divider()
+                    st.markdown("#### 📖 Historial de Retroalimentaciones")
+                    
+                    for evaluacion in historial_evaluaciones:
+                        fecha_corta = evaluacion['created_at'][:10]
+                        nota = evaluacion['nota']
+                        color_nota = "🟢" if nota >= 85 else "🟡" if nota >= 60 else "🔴"
+                        with st.expander(f"{color_nota} {fecha_corta} | {evaluacion['tarea']} - Nota: {nota}/100"):
+                            st.markdown(f"**🗣️ Guía Pedagógica del Tutor:**")
+                            st.info(evaluacion['feedback'])
+            except Exception as e:
+                st.error("No se pudo cargar tu historial.")
+
+    # -----------------------------------------------------------
+    # INTERFAZ DE CHAT (Misión Normal)
+    # -----------------------------------------------------------
+    else:
+        tutoria_actual = st.session_state['tutoria_activa']
+        modo_voz_activado = tutoria_actual.get('modo_voz', False)
+        
+        if modo_voz_activado:
+            st.markdown(f"""
+            <style>
+                @keyframes pulse-red {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.3; }} 100% {{ opacity: 1; }} }}
+                @keyframes float-window {{ 0% {{ transform: translateY(0px); }} 50% {{ transform: translateY(-8px); }} 100% {{ transform: translateY(0px); }} }}
+                .floating-pip {{ position: fixed; top: 80px; right: 20px; width: 130px; height: 180px; border-radius: 16px; box-shadow: 0px 10px 30px rgba(0,0,0,0.3); border: 3px solid #4F46E5; z-index: 999999; overflow: hidden; background-color: #000; animation: float-window 4s ease-in-out infinite; }}
+                .floating-pip img {{ width: 100%; height: 100%; object-fit: cover; }}
+                .live-badge {{ position: absolute; top: 8px; right: 8px; background-color: #ef4444; color: white; font-size: 0.6rem; font-weight: bold; padding: 3px 8px; border-radius: 12px; z-index: 2; animation: pulse-red 1.5s infinite; box-shadow: 0px 2px 5px rgba(0,0,0,0.5); display: none; }}
+            </style>
+            <div class="floating-pip" id="pip-container">
+                <div class="live-badge" id="live-badge-ui">🔴 LIVE</div>
+                <img id="tutor-avatar-ui" src="{URL_AVATAR_SILENCIO}">
+            </div>
+            """, unsafe_allow_html=True)
+
+        col_back, col_title = st.columns([1, 4])
+        with col_back:
+            if st.button("⬅️ Salir", use_container_width=True):
+                del st.session_state['tutoria_activa']
+                if 'resultado_evaluacion' in st.session_state: del st.session_state['resultado_evaluacion']
+                st.rerun()
+        with col_title:
+            st.success(f"🎯 **{tutoria_actual['asignatura']} | Fase: {tutoria_actual.get('momento_pedagogico', 'General')}**")
+
+        if 'resultado_evaluacion' not in st.session_state:
+            for index, mensaje in enumerate(st.session_state.mensajes):
+                avatar_icon = "🧑‍🎓" if mensaje["role"] == "user" else URL_LOGO_COLEGIO
+                with st.chat_message(mensaje["role"], avatar=avatar_icon):
+                    if isinstance(mensaje["content"], list):
+                        for item in mensaje["content"]:
+                            if item["type"] == "text":
+                                st.markdown(item["text"])
+                            elif item["type"] == "image_url":
+                                b64_img = item["image_url"]["url"].split(",")[1]
+                                st.image(base64.b64decode(b64_img), width=350)
+                    else:
+                        if "[DOCUMENTO PDF ADJUNTO]:" in mensaje["content"]:
+                            partes = mensaje["content"].split("[DOCUMENTO PDF ADJUNTO]:")
+                            st.markdown(partes[0].strip())
+                            with st.expander("📄 Documento PDF Adjunto (Texto Extraído)"):
+                                st.text(partes[1].strip())
+                        else:
+                            st.markdown(mensaje["content"])
+                            
+                    if mensaje.get("audio_bytes"):
+                        es_el_ultimo = (index == len(st.session_state.mensajes) - 1)
+                        b64_audio = base64.b64encode(mensaje["audio_bytes"]).decode()
+                        codigo_reproductor_inteligente = f"""
+                        <audio id="audio-{index}" controls {"autoplay" if es_el_ultimo else ""} style="width: 100%; height: 45px; outline: none; border-radius: 10px;">
+                            <source src="data:audio/mp3;base64,{b64_audio}" type="audio/mp3">
+                        </audio>
+                        <script>
+                            (function() {{
+                                const audio = document.getElementById('audio-{index}');
+                                const parentDoc = window.parent.document;
+                                const avatar = parentDoc.getElementById('tutor-avatar-ui');
+                                const badge = parentDoc.getElementById('live-badge-ui');
+                                if (avatar && audio) {{
+                                    audio.onplay = () => {{ avatar.src = "{URL_AVATAR_HABLANDO}"; if (badge) badge.style.display = 'block'; }};
+                                    audio.onended = () => {{ avatar.src = "{URL_AVATAR_SILENCIO}"; if (badge) badge.style.display = 'none'; }};
+                                    audio.onpause = audio.onended;
+                                }}
+                            }})();
+                        </script>
+                        """
+                        components.html(codigo_reproductor_inteligente, height=60)
+
+            col_doc, col_voz = st.columns([1, 1])
+            with col_doc:
+                with st.expander("📎 Adjuntar PDF / Imagen"):
+                    archivo_subido = st.file_uploader("Sube y escribe abajo para enviar.", type=["pdf", "png", "jpg", "jpeg", "webp"], label_visibility="collapsed")
+                    if archivo_subido:
+                        st.success("Archivo listo.")
+            
+            with col_voz:
+                with st.expander("🎙️ Enviar nota de voz"):
+                    if VOZ_DISPONIBLE:
+                        st.markdown(f"<p style='font-size:0.8rem; text-align:center;'>Usa la grabadora a continuación para hablar.</p>", unsafe_allow_html=True)
+                        grabacion = st.audio_input("Graba tu mensaje", label_visibility="collapsed")
+                        if grabacion is not None:
+                            audio_bytes = grabacion.getvalue()
+                            if audio_bytes != st.session_state.get('ultimo_audio'):
+                                st.session_state['ultimo_audio'] = audio_bytes
+                                st.markdown(f"<p style='text-align:center;'>⏳ Escuchando tu nota de voz...</p>", unsafe_allow_html=True)
+                                texto_voz = transcribir_audio(audio_bytes)
+                                st.session_state['mensaje_voz_pendiente'] = texto_voz
+                                st.rerun() 
+                    else:
+                        st.warning("⚠️ La librería gTTS no está instalada.")
+
+            pregunta_escrita = st.chat_input("Escribe tu mensaje para enviar...")
+            pregunta_voz = st.session_state.get('mensaje_voz_pendiente')
+            pregunta = pregunta_escrita or pregunta_voz
+
+            if pregunta:
+                if pregunta_voz: del st.session_state['mensaje_voz_pendiente']
+                contenido_final = pregunta
+                texto_pdf_extraido = ""
+                
+                if archivo_subido is not None:
+                    st.session_state['evidencia_adjuntada_en_mision'] = True
+                    if archivo_subido.type == "application/pdf":
+                        if PDF_DISPONIBLE:
+                            try:
+                                lector = PdfReader(archivo_subido)
+                                texto_pdf_extraido = "\n".join([pagina.extract_text() for pagina in lector.pages])
+                                contenido_final = f"{pregunta}\n\n[DOCUMENTO PDF ADJUNTO]:\n{texto_pdf_extraido}"
+                                st.session_state.mensajes.append({"role": "user", "content": contenido_final})
+                            except Exception as e:
+                                st.error(f"Error al leer PDF: {e}")
+                                st.session_state.mensajes.append({"role": "user", "content": pregunta})
+                    elif archivo_subido.type.startswith("image/"):
+                        bytes_data = archivo_subido.getvalue()
+                        base64_encoded = base64.b64encode(bytes_data).decode('utf-8')
+                        contenido_final = [
+                            {"type": "text", "text": pregunta},
+                            {"type": "image_url", "image_url": {"url": f"data:{archivo_subido.type};base64,{base64_encoded}"}}
+                        ]
+                        st.session_state.mensajes.append({"role": "user", "content": contenido_final})
+                else:
+                    st.session_state.mensajes.append({"role": "user", "content": contenido_final})
+
+                if pregunta_voz:
+                    st.session_state['voz_utilizada_en_mision'] = True
+
+                with st.chat_message("assistant", avatar=URL_LOGO_COLEGIO):
+                    st.markdown(f"<p>Pensando...</p>", unsafe_allow_html=True)
+                    
+                    respuesta = generar_respuesta(perfil_actual, tutoria_actual, pregunta, st.session_state.mensajes)
+                    audio_generado = None
+                    if VOZ_DISPONIBLE and modo_voz_activado:
+                        try:
+                            tts = gTTS(respuesta, lang='es', tld='com.mx')
+                            fp = io.BytesIO()
+                            tts.write_to_fp(fp)
+                            audio_generado = fp.getvalue()
+                        except:
+                            pass 
+                
+                st.session_state.mensajes.append({
+                    "role": "assistant", 
+                    "content": respuesta,
+                    "audio_bytes": audio_generado 
+                })
+                st.rerun() 
+
+            st.divider()
+            ha_interactuado = len(st.session_state.mensajes) > 1
+            if not ha_interactuado:
+                st.info("💡 Escribe al menos un mensaje o sube un archivo antes de entregar.")
+
+            col_vacia, col_boton = st.columns([2, 1])
+            with col_boton:
+                if st.button("📤 Entregar Actividad", type="primary", use_container_width=True, disabled=not ha_interactuado):
+                    with st.spinner("🧑‍🏫 Evaluando de forma Holística..."):
+                        try:
+                            resultado_json_str = evaluar_actividad(tutoria_actual, st.session_state.mensajes)
+                            datos_evaluacion = json.loads(resultado_json_str)
+                            
+                            historial_limpio_para_db = []
+                            for m in st.session_state.mensajes:
+                                mensaje_copia = {"role": m["role"], "content": m["content"]}
+                                historial_limpio_para_db.append(mensaje_copia)
+                                
+                            historial_completo = json.dumps(historial_limpio_para_db, ensure_ascii=False, indent=4)
+                            
+                            supabase.table("evaluaciones").insert({
+                                "estudiante_id": perfil_actual['id'],
+                                "tarea": tutoria_actual['mision'],
+                                "nota": datos_evaluacion['nota'],
+                                "feedback": datos_evaluacion['feedback'],
+                                "areas_mejora": datos_evaluacion['areas_mejora'],
+                                "historial_evidencia": historial_completo
+                            }).execute()
+                            
+                            supabase.table("tutorias").update({"estado": "completada"}).eq("id", tutoria_actual['id']).execute()
+                            
+                            medallas_desbloqueadas_ahora = []
+                            if otorgar_medalla_logica(perfil_actual['id'], "primera_mision"): medallas_desbloqueadas_ahora.append("primera_mision")
+                            if datos_evaluacion['nota'] >= 85: 
+                                if otorgar_medalla_logica(perfil_actual['id'], "mente_brillante"): medallas_desbloqueadas_ahora.append("mente_brillante")
+                            if datos_evaluacion['nota'] == 100:
+                                if otorgar_medalla_logica(perfil_actual['id'], "perfeccion"): medallas_desbloqueadas_ahora.append("perfeccion")
+                            if st.session_state.get('voz_utilizada_en_mision', False) or modo_voz_activado:
+                                if otorgar_medalla_logica(perfil_actual['id'], "audiofilo"): medallas_desbloqueadas_ahora.append("audiofilo")
+                            if st.session_state.get('evidencia_adjuntada_en_mision', False):
+                                if otorgar_medalla_logica(perfil_actual['id'], "investigador"): medallas_desbloqueadas_ahora.append("investigador")
+                            
+                            if medallas_desbloqueadas_ahora: st.session_state['nuevas_medallas'] = medallas_desbloqueadas_ahora
+                            st.session_state['resultado_evaluacion'] = datos_evaluacion
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error: {e}")
+        
+        else:
+            datos = st.session_state['resultado_evaluacion']
+            st.markdown("### 📊 Actividad Completada")
+            st.markdown(f"<h1 style='text-align: center; color: green;'>{datos['nota']}/100</h1>", unsafe_allow_html=True)
+            st.info(f"**🗣️ Comentario del Tutor:**\n{datos['feedback']}")
+            
+            if 'nuevas_medallas' in st.session_state:
+                st.balloons() 
+                st.markdown("#### 🎉 ¡Has desbloqueado nuevos logros integrales en esta misión!")
+                for clave_m in st.session_state['nuevas_medallas']:
+                    meta = MEDALLAS_MAESTRAS[clave_m]
+                    st.success(f"**{meta['icono']} {meta['titulo']}:** {meta['desc']}")
+            
+            if st.button("Regresar a Misiones", type="primary"):
+                del st.session_state['tutoria_activa']
+                del st.session_state['resultado_evaluacion']
+                if 'nuevas_medallas' in st.session_state: del st.session_state['nuevas_medallas']
+                if 'voz_utilizada_en_mision' in st.session_state: del st.session_state['voz_utilizada_en_mision']
+                if 'evidencia_adjuntada_en_mision' in st.session_state: del st.session_state['evidencia_adjuntada_en_mision']
+                st.rerun()
