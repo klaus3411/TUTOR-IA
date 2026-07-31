@@ -194,13 +194,13 @@ def evaluar_actividad(tutoria, historial_mensajes):
     mensajes_api.append({"role": "user", "content": "Analiza paso a paso y genera la evaluación MHT en formato JSON ahora mismo."})
 opciones_api = {
         "messages": mensajes_api,
-        "model": "gpt-4o-mini",
+        "model": "gpt-5.6-luna",
         "temperature": 0.1,
         "response_format": {"type": "json_object"}
     }
     
-    respuesta = cliente_ia.chat.completions.create(**opciones_api)
-    contenido = respuesta.choices[0].message.content
+     respuesta = cliente_ia.chat.completions.create(**opciones_api)
+     contenido = respuesta.choices[0].message.content
     
     match = re.search(r'\{.*\}', contenido, re.DOTALL)
     if match:
