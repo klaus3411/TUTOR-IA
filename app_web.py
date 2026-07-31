@@ -195,14 +195,13 @@ def evaluar_actividad(tutoria, historial_mensajes):
     
 opciones_api = {
         "messages": mensajes_api,
-        "model": "gpt-5.6-luna", # Usamos el modelo único de OpenAI
+        "model": "gpt-5.6-luna",
         "temperature": 0.1,
-        "response_format": {"type": "json_object"} # Obligamos a que devuelva un JSON perfecto
+        "response_format": {"type": "json_object"}
     }
     
-        # Llamamos a OpenAI
-     respuesta = cliente_ia.chat.completions.create(**opciones_api)
-     contenido = respuesta.choices[0].message.content
+    respuesta = cliente_ia.chat.completions.create(**opciones_api)
+    contenido = respuesta.choices[0].message.content
     
     match = re.search(r'\{.*\}', contenido, re.DOTALL)
     if match:
