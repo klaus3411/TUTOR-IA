@@ -185,20 +185,55 @@ def evaluar_actividad(tutoria, historial_mensajes):
         
     mensajes_api.append({"role": "user", "content": "Analiza paso a paso y genera la evaluación MHT en formato JSON ahora mismo."})
     
+# 1. CREAMOS EL MOLDE RÍGIDO (STRUCTURED OUTPUTS)
+    molde_json = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "evaluacion_holistica",
+            "strict": True, # <--- Esto es lo que garantiza 100% de precisión
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "razonamiento_secreto": {
+                        "type": "string",
+                        "description": "Justificación pedagógica MHT de la nota"
+                    },
+                    "nota": {
+                        "type": "integer",
+                        "description": "Calificación exacta del 0 al 100"
+                    },
+                    "feedback": {
+                        "type": "string",
+                        "description": "Retroalimentación constructiva, empática y motivadora"
+                    },
+                    "puntos_fuertes": {
+                        "type": "string",
+                        "description": "Qué logró en su sentir, pensar o actuar"
+                    },
+                    "areas_mejora": {
+                        "type": "string",
+                        "description": "En qué dimensión debe profundizar"
+                    }
+                },
+                "required": ["razonamiento_secreto", "nota", "feedback", "puntos_fuertes", "areas_mejora"],
+                "additionalProperties": False
+            }
+        }
+    }
+    
     opciones_api = {
         "messages": mensajes_api,
         "model": "gpt-4o-mini",
         "temperature": 0.1,
-        "response_format": {"type": "json_object"}
+        "response_format": molde_json  # <--- Inyectamos el molde aquí
     }
     
+    # 2. LLAMAMOS A LA API
     respuesta = cliente_ia.chat.completions.create(**opciones_api)
-    contenido = respuesta.choices[0].message.content
     
-    match = re.search(r'\{.*\}', contenido, re.DOTALL)
-    if match:
-        return match.group(0)
-    return contenido
+    # 3. DEVOLVEMOS EL RESULTADO PURO
+    # (Ya no necesitamos el re.search para limpiar el texto, OpenAI garantiza que viene limpio)
+    return respuesta.choices[0].message.content
 
 def generar_respuesta(perfil, tutoria, pregunta_actual, historial_mensajes):
     texto_busqueda = str(pregunta_actual)
