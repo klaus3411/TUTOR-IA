@@ -192,10 +192,9 @@ def evaluar_actividad(tutoria, historial_mensajes):
         mensajes_api.append({"role": msg["role"], "content": msg["content"]})
         
     mensajes_api.append({"role": "user", "content": "Analiza paso a paso y genera la evaluación MHT en formato JSON ahora mismo."})
-    
 opciones_api = {
         "messages": mensajes_api,
-        "model": "gpt-5.6-luna",
+        "model": "gpt-4o-mini",
         "temperature": 0.1,
         "response_format": {"type": "json_object"}
     }
