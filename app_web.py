@@ -6,7 +6,7 @@ import mercadopago
 import re
 from dotenv import load_dotenv
 from supabase import create_client, Client
-from groq import Groq
+from openai import OpenAI
 from sentence_transformers import SentenceTransformer
 import streamlit.components.v1 as components
 
@@ -56,11 +56,12 @@ except ImportError:
 def iniciar_sistemas():
     load_dotenv()
     supabase = create_client(os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_KEY"))
-    cliente_groq = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+    # Reemplazamos Groq por OpenAI
+    cliente_ia = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
     modelo_vectores = SentenceTransformer('all-MiniLM-L6-v2')
-    return supabase, cliente_groq, modelo_vectores
-
-supabase, cliente_groq, modelo_vectores = iniciar_sistemas()
+    return supabase, cliente_ia, modelo_vectores
+# Actualizamos los nombres de las variables aquí también
+supabase, cliente_ia, modelo_vectores = iniciar_sistemas()
 
 def obtener_perfil(correo):
     respuesta = supabase.table("estudiantes").select("*").eq("correo", correo).execute()
@@ -130,9 +131,10 @@ def mostrar_interfaz_pago(perfil_estudiante):
 # ==========================================
 def transcribir_audio(audio_bytes):
     try:
-        respuesta = cliente_groq.audio.transcriptions.create(
+        # Cambiamos cliente_groq por cliente_ia y el modelo a whisper-1
+        respuesta = cliente_ia.audio.transcriptions.create(
             file=("audio.wav", audio_bytes),
-            model="whisper-large-v3-turbo",
+            model="whisper-1",
             response_format="text",
             language="es"
         )
@@ -191,16 +193,15 @@ def evaluar_actividad(tutoria, historial_mensajes):
         
     mensajes_api.append({"role": "user", "content": "Analiza paso a paso y genera la evaluación MHT en formato JSON ahora mismo."})
     
-    opciones_api = {
+opciones_api = {
         "messages": mensajes_api,
-        "model": modelo_eval,
-        "temperature": 0.1 
+        "model": "gpt-5.6-luna", # Usamos el modelo único de OpenAI
+        "temperature": 0.1,
+        "response_format": {"type": "json_object"} # Obligamos a que devuelva un JSON perfecto
     }
     
-    if not tiene_imagen:
-        opciones_api["response_format"] = {"type": "json_object"}
-        
-    respuesta = cliente_groq.chat.completions.create(**opciones_api)
+    # Llamamos a OpenAI
+    respuesta = cliente_ia.chat.completions.create(**opciones_api)
     contenido = respuesta.choices[0].message.content
     
     match = re.search(r'\{.*\}', contenido, re.DOTALL)
@@ -266,13 +267,13 @@ INSTRUCCIONES DE COMPORTAMIENTO:
         for msg in historial_mensajes[-8:]: 
             mensajes_api.append({"role": msg["role"], "content": msg["content"]})
 
-    respuesta_ia = cliente_groq.chat.completions.create(
+# Llamada a OpenAI para el chat en vivo
+    respuesta_ia = cliente_ia.chat.completions.create(
         messages=mensajes_api,
-        model=modelo_chat,
+        model="gpt-5.6-luna", # Modelo único multimodal
         temperature=0.7
     )
     return respuesta_ia.choices[0].message.content
-
 
 # ==========================================
 # 5. FLUJO PRINCIPAL E INTERFAZ GRÁFICA (UI)
