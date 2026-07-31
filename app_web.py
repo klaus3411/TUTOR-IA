@@ -619,8 +619,7 @@ else:
                 ha_interactuado = len(st.session_state.mensajes) > 1
                 if not ha_interactuado:
                     st.info("💡 Escribe al menos un mensaje o sube un archivo antes de entregar.")
-
-                col_vacia, col_boton = st.columns([2, 1])
+col_vacia, col_boton = st.columns([2, 1])
                 with col_boton:
                     if st.button("📤 Entregar Actividad", type="primary", use_container_width=True, disabled=not ha_interactuado):
                         with st.spinner("🧑‍🏫 Evaluando de forma Holística..."):
@@ -632,15 +631,15 @@ else:
                                 for m in st.session_state.mensajes:
                                     mensaje_copia = {"role": m["role"], "content": m["content"]}
                                     historial_limpio_para_db.append(mensaje_copia)
-                              historial_completo = json.dumps(historial_limpio_para_db, ensure_ascii=False, indent=4)
+                                    
+                                historial_completo = json.dumps(historial_limpio_para_db, ensure_ascii=False, indent=4)
                                 
-                                # ❌ REEMPLAZA TU INSERT ACTUAL POR ESTE:
                                 supabase.table("evaluaciones").insert({
                                     "estudiante_id": perfil_actual['id'],
                                     "tarea": tutoria_actual['mision'],
                                     "nota": datos_evaluacion['nota'],
                                     "feedback": datos_evaluacion['feedback'],
-                                    "areas_mejora": datos_evaluacion['areas_mejora'], # 🌟 AQUÍ GUARDAMOS LA MEMORIA
+                                    "areas_mejora": datos_evaluacion['areas_mejora'],
                                     "historial_evidencia": historial_completo
                                 }).execute()
                                 
