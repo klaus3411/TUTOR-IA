@@ -3,7 +3,6 @@ import os
 import json
 import base64
 import mercadopago
-import re
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from openai import OpenAI
@@ -168,29 +167,20 @@ def evaluar_actividad(tutoria, historial_mensajes):
     2. Si la respuesta carece de conexión con la realidad local o no muestra pensamiento crítico, califica entre 40 y 60.
     3. Premia con más de 85 a quienes muestren creatividad, apropiación del "saber hacer" y "saber trascender".
     4. Inicia en 100 y resta puntos justificándolo pedagógicamente.
-    
-    Genera un reporte en formato JSON exacto:
-    {{
-        "razonamiento_secreto": "<Justificación pedagógica MHT de la nota>",
-        "nota": <entero del 0 al 100>,
-        "feedback": "<Retroalimentación constructiva, empática y motivadora, enfocada en la mejora integral>",
-        "puntos_fuertes": "<Qué logró en su sentir, pensar o actuar>",
-        "areas_mejora": "<En qué dimensión debe profundizar>"
-    }}
     """
     
     mensajes_api = [{"role": "system", "content": prompt_sistema}]
     for msg in historial_mensajes:
         mensajes_api.append({"role": msg["role"], "content": msg["content"]})
         
-    mensajes_api.append({"role": "user", "content": "Analiza paso a paso y genera la evaluación MHT en formato JSON ahora mismo."})
+    mensajes_api.append({"role": "user", "content": "Analiza paso a paso y genera la evaluación MHT ahora mismo."})
     
-# 1. CREAMOS EL MOLDE RÍGIDO (STRUCTURED OUTPUTS)
+    # NUEVO: Molde Estricto (Structured Outputs)
     molde_json = {
         "type": "json_schema",
         "json_schema": {
             "name": "evaluacion_holistica",
-            "strict": True, # <--- Esto es lo que garantiza 100% de precisión
+            "strict": True,
             "schema": {
                 "type": "object",
                 "properties": {
@@ -225,14 +215,10 @@ def evaluar_actividad(tutoria, historial_mensajes):
         "messages": mensajes_api,
         "model": "gpt-4o-mini",
         "temperature": 0.1,
-        "response_format": molde_json  # <--- Inyectamos el molde aquí
+        "response_format": molde_json
     }
     
-    # 2. LLAMAMOS A LA API
     respuesta = cliente_ia.chat.completions.create(**opciones_api)
-    
-    # 3. DEVOLVEMOS EL RESULTADO PURO
-    # (Ya no necesitamos el re.search para limpiar el texto, OpenAI garantiza que viene limpio)
     return respuesta.choices[0].message.content
 
 def generar_respuesta(perfil, tutoria, pregunta_actual, historial_mensajes):
@@ -246,10 +232,9 @@ def generar_respuesta(perfil, tutoria, pregunta_actual, historial_mensajes):
     if resultados.data:
         texto_oficial = resultados.data[0]["contenido_texto"]
 
-    # 🌟 NUEVO: RECUPERANDO LA MEMORIA EVOLUTIVA
+    # NUEVO: RECUPERANDO LA MEMORIA EVOLUTIVA
     memoria_evolutiva = "Es la primera vez que interactúas con este alumno o no hay debilidades previas registradas."
     try:
-        # Busca la última evaluación del alumno ordenada por fecha descendente
         res_memoria = supabase.table("evaluaciones").select("areas_mejora").eq("estudiante_id", perfil['id']).order("created_at", desc=True).limit(1).execute()
         if res_memoria.data and res_memoria.data[0].get("areas_mejora"):
             memoria_evolutiva = res_memoria.data[0]["areas_mejora"]
@@ -261,7 +246,6 @@ def generar_respuesta(perfil, tutoria, pregunta_actual, historial_mensajes):
     momento_pedagogico = tutoria.get('momento_pedagogico', 'General / Ciclo Completo')
     modo_voz = tutoria.get('modo_voz', False)
 
-    # 🌟 NUEVO PROMPT: INYECTANDO LA MEMORIA EN EL MHT
     instrucciones = f"""ROL Y PERFIL DEL ASISTENTE:
 Eres el Tutor IA de Intellectus Apex, experto en el Modelo Holístico Transformador (MHT). 
 Tu propósito es guiar al estudiante de manera empática, detallada y rigurosa hacia la madurez integral.
@@ -272,9 +256,9 @@ DATOS DEL ALUMNO:
 - Complejidad: {tutoria['complejidad']}
 - MISIÓN ASIGNADA HOY: {tutoria['mision']}
 
-🧠 MEMORIA EVOLUTIVA SECRETA (¡SÚPER IMPORTANTE!):
+🧠 MEMORIA EVOLUTIVA SECRETA:
 En su última evaluación, este alumno presentó la siguiente área de mejora: "{memoria_evolutiva}".
-Tu deber pedagógico es guiar la conversación de hoy (usando la mayéutica) para verificar sutilmente si ha superado esta debilidad. NO le digas directamente "vi que fallaste en esto la vez pasada", integra este reto de forma invisible en tus explicaciones y preguntas de hoy.
+Tu deber pedagógico es guiar la conversación de hoy (usando la mayéutica) para verificar sutilmente si ha superado esta debilidad. NO le digas directamente que falló en el pasado, integra este reto de forma invisible.
 
 ENFOQUE PEDAGÓGICO DE ESTA SESIÓN:
 Estás trabajando en el momento de: **{momento_pedagogico}**.
@@ -311,6 +295,7 @@ INSTRUCCIONES DE COMPORTAMIENTO:
         temperature=0.7
     )
     return respuesta_ia.choices[0].message.content
+
 
 # ==========================================
 # 5. FLUJO PRINCIPAL E INTERFAZ GRÁFICA (UI)
@@ -619,7 +604,8 @@ else:
                 ha_interactuado = len(st.session_state.mensajes) > 1
                 if not ha_interactuado:
                     st.info("💡 Escribe al menos un mensaje o sube un archivo antes de entregar.")
-col_vacia, col_boton = st.columns([2, 1])
+
+                col_vacia, col_boton = st.columns([2, 1])
                 with col_boton:
                     if st.button("📤 Entregar Actividad", type="primary", use_container_width=True, disabled=not ha_interactuado):
                         with st.spinner("🧑‍🏫 Evaluando de forma Holística..."):
